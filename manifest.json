@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "TabCloser",
+  "version": "0.1.0",
+  "description": "Auto-close distracting sites after an active-time limit. Optional block period after close.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tabcloser@personal.local",
+      "strict_min_version": "121.0"
+    }
+  },
+  "permissions": ["tabs", "storage", "alarms", "webNavigation"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "scripts": ["common.js", "background.js"]
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "TabCloser"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["blocked.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
