@@ -1,22 +1,34 @@
 {
   "manifest_version": 3,
   "name": "TabCloser",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Auto-close distracting sites after an active-time limit. Optional block period after close.",
   "browser_specific_settings": {
     "gecko": {
       "id": "tabcloser@personal.local",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     },
     "gecko_android": {
       "strict_min_version": "142.0"
     }
   },
-  "permissions": ["tabs", "storage", "alarms", "webNavigation"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "tabs",
+    "storage",
+    "alarms",
+    "webNavigation",
+    "webRequest",
+    "webRequestBlocking",
+    "webRequestFilterResponse"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -25,7 +37,10 @@
     "128": "icons/icon-128.png"
   },
   "background": {
-    "scripts": ["common.js", "background.js"]
+    "scripts": [
+      "common.js",
+      "background.js"
+    ]
   },
   "action": {
     "default_popup": "popup.html",
@@ -42,8 +57,27 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["blocked.html"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "blocked.html"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://x.com/*",
+        "*://*.x.com/*",
+        "*://twitter.com/*",
+        "*://*.twitter.com/*"
+      ],
+      "js": [
+        "common.js",
+        "x-protection.js"
+      ],
+      "run_at": "document_idle"
     }
   ]
 }

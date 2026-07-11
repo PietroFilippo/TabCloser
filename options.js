@@ -1,9 +1,14 @@
 const $rules = document.getElementById('rules');
 const $save = document.getElementById('saveStatus');
 const $add = document.getElementById('addRule');
+const $xEnabled = document.getElementById('xProtectionEnabled');
+const $xLockMinutes = document.getElementById('xLockMinutes');
+const $xLockButton = document.getElementById('lockXProtection');
+const $xStatus = document.getElementById('xProtectionStatus');
 
-let snapshot = { rules: [], accumSec: {}, blocks: {}, focus: {} };
+let snapshot = { rules: [], accumSec: {}, blocks: {}, focus: {}, xProtection: {} };
 let workingRules = null;
+let saveT = null;
 
 function el(tag, attrs, children) {
   const e = document.createElement(tag);
@@ -18,8 +23,7 @@ function el(tag, attrs, children) {
   }
   if (children != null) {
     for (const c of [].concat(children)) {
-      if (c == null) continue;
-      e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+      if (c != null) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
     }
   }
   return e;
@@ -27,6 +31,14 @@ function el(tag, attrs, children) {
 
 function clear(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
+}
+
+function isLocked(until) {
+  return Number.isFinite(until) && until > Date.now();
+}
+
+function lockText(until) {
+  return 'Locked until ' + new Date(until).toLocaleString() + '.';
 }
 
 function defaultRule() {
@@ -37,13 +49,19 @@ function defaultRule() {
     blockAfterClose: true,
     blockDurationSec: 1800,
     enabled: true,
+    disableLockedUntil: null,
   };
 }
 
-async function initialLoad() {
+async function refreshSnapshot() {
   snapshot = await browser.runtime.sendMessage({ type: 'getState' });
-  workingRules = snapshot.rules.map(r => ({ ...r }));
+}
+
+async function initialLoad() {
+  await refreshSnapshot();
+  workingRules = snapshot.rules.map(rule => ({ ...rule }));
   render();
+  renderXProtection();
 }
 
 function render() {
@@ -52,9 +70,7 @@ function render() {
     $rules.appendChild(el('p', { class: 'empty-list' }, 'No sites yet. Click "+ Add site" below.'));
     return;
   }
-  for (const rule of workingRules) {
-    $rules.appendChild(renderRule(rule));
-  }
+  workingRules.forEach(rule => $rules.appendChild(renderRule(rule)));
 }
 
 function buildStatus(rule) {
@@ -62,132 +78,145 @@ function buildStatus(rule) {
   const accum = snapshot.accumSec[key] ?? 0;
   const block = snapshot.blocks[key];
   const blockActive = block && Date.now() < block.until;
-
   const frag = document.createDocumentFragment();
 
   frag.appendChild(el('span', null, [
     'Active time: ',
     el('strong', null, formatDuration(accum)),
-    ` / ${formatDuration(rule.closeAfterSec)}`,
+    ' / ' + formatDuration(rule.closeAfterSec),
   ]));
-
   frag.appendChild(el('button', { class: 'reset', 'data-action': 'reset' }, 'Reset timer'));
 
   if (blockActive) {
-    const remaining = formatDuration((block.until - Date.now()) / 1000);
     frag.appendChild(el('div', { class: 'blocked-line' }, [
-      `Blocked — unblocks in ${remaining} `,
+      'Blocked; unblocks in ' + formatDuration((block.until - Date.now()) / 1000) + ' ',
       el('button', { class: 'unblock', 'data-action': 'unblock' }, 'Unblock now'),
     ]));
   }
-
   return frag;
 }
 
 function setStatus(statusEl, rule) {
   clear(statusEl);
   statusEl.appendChild(buildStatus(rule));
-  bindStatusButtons(statusEl, rule);
-}
-
-function bindStatusButtons(statusEl, rule) {
   statusEl.querySelector('[data-action="reset"]')?.addEventListener('click', async () => {
     await browser.runtime.sendMessage({ type: 'resetAccum', domain: rule.domain });
     await refreshSnapshot();
     setStatus(statusEl, rule);
   });
   statusEl.querySelector('[data-action="unblock"]')?.addEventListener('click', async () => {
-    if (confirm(`Unblock ${normalizeRuleDomain(rule.domain)} now?`)) {
-      await browser.runtime.sendMessage({ type: 'unblock', domain: rule.domain });
-      await refreshSnapshot();
-      setStatus(statusEl, rule);
-    }
+    if (!confirm('Unblock ' + normalizeRuleDomain(rule.domain) + ' now?')) return;
+    await browser.runtime.sendMessage({ type: 'unblock', domain: rule.domain });
+    await refreshSnapshot();
+    setStatus(statusEl, rule);
   });
 }
 
+function lockControls(rule, locked) {
+  if (locked) return el('div', { class: 'rule-lock' }, lockText(rule.disableLockedUntil));
+  const minutes = el('input', { type: 'number', min: '1', step: '1', value: '60' });
+  const button = el('button', { type: 'button' }, 'Lock rule');
+  button.addEventListener('click', async () => {
+    const durationSec = Math.round(Number(minutes.value) * 60);
+    const saved = await save();
+    if (!saved) return;
+    const response = await browser.runtime.sendMessage({ type: 'lockRule', id: rule.id, durationSec });
+    if (!response.ok) return showSaveError(response.error);
+    await initialLoad();
+  });
+  return el('div', { class: 'lock-controls' }, [
+    el('label', null, 'Lock rule for'),
+    minutes,
+    el('span', null, 'min'),
+    button,
+  ]);
+}
+
 function renderRule(rule) {
+  const locked = isLocked(rule.disableLockedUntil);
   const div = el('div', { class: 'rule' + (rule.enabled ? '' : ' disabled') });
 
-  // Header: domain input + delete button
-  const domainInput = el('input', { type: 'text', placeholder: 'e.g. twitter.com', 'data-field': 'domain' });
+  const domainInput = el('input', { type: 'text', placeholder: 'e.g. twitter.com' });
   domainInput.value = rule.domain;
-  const delBtn = el('button', { class: 'del', title: 'Delete rule' }, '×');
+  domainInput.disabled = locked;
+  const delBtn = el('button', { class: 'del', title: 'Delete rule', type: 'button' }, 'x');
+  delBtn.disabled = locked;
   div.appendChild(el('div', { class: 'rule-header' }, [domainInput, delBtn]));
 
-  // Close-after
-  const closeAfterInput = el('input', { type: 'number', min: '0.1', step: '0.1', 'data-field': 'closeAfterMin' });
+  const closeAfterInput = el('input', { type: 'number', min: '0.1', step: '0.1' });
   closeAfterInput.value = String(Math.round((rule.closeAfterSec / 60) * 100) / 100);
+  closeAfterInput.disabled = locked;
   div.appendChild(el('div', { class: 'field' }, [
     el('label', null, 'Close after'),
     closeAfterInput,
     el('span', null, 'min of active time'),
   ]));
 
-  // Block after close + duration
-  const blockCheckbox = el('input', { type: 'checkbox', 'data-field': 'blockAfterClose' });
+  const blockCheckbox = el('input', { type: 'checkbox' });
   blockCheckbox.checked = rule.blockAfterClose;
-  const blockDurInput = el('input', { type: 'number', min: '0.1', step: '0.1', 'data-field': 'blockDurationMin' });
+  blockCheckbox.disabled = locked;
+  const blockDurInput = el('input', { type: 'number', min: '0.1', step: '0.1' });
   blockDurInput.value = String(Math.round((rule.blockDurationSec / 60) * 100) / 100);
-  blockDurInput.disabled = !rule.blockAfterClose;
+  blockDurInput.disabled = locked || !rule.blockAfterClose;
   div.appendChild(el('div', { class: 'field' }, [
     el('label', { class: 'toggle' }, [blockCheckbox, ' Block after close for']),
     blockDurInput,
     el('span', null, 'min'),
   ]));
 
-  // Enabled toggle
-  const enabledCheckbox = el('input', { type: 'checkbox', 'data-field': 'enabled' });
+  const enabledCheckbox = el('input', { type: 'checkbox' });
   enabledCheckbox.checked = rule.enabled;
+  enabledCheckbox.disabled = locked;
   div.appendChild(el('div', { class: 'field' }, [
     el('label', { class: 'toggle' }, [enabledCheckbox, ' Enabled']),
   ]));
 
-  // Status
+  div.appendChild(lockControls(rule, locked));
+
   const statusEl = el('div', { class: 'status' });
   setStatus(statusEl, rule);
   div.appendChild(statusEl);
 
-  // Wire events
-  domainInput.addEventListener('input', e => {
-    rule.domain = e.target.value;
-    scheduleSave();
-  });
-  closeAfterInput.addEventListener('input', e => {
-    const v = parseFloat(e.target.value);
-    if (!isNaN(v) && v > 0) {
-      rule.closeAfterSec = Math.max(1, Math.round(v * 60));
+  domainInput.addEventListener('input', event => { rule.domain = event.target.value; scheduleSave(); });
+  closeAfterInput.addEventListener('input', event => {
+    const value = parseFloat(event.target.value);
+    if (!isNaN(value) && value > 0) {
+      rule.closeAfterSec = Math.max(1, Math.round(value * 60));
       scheduleSave();
     }
   });
-  blockCheckbox.addEventListener('change', e => {
-    rule.blockAfterClose = e.target.checked;
-    blockDurInput.disabled = !rule.blockAfterClose;
+  blockCheckbox.addEventListener('change', event => {
+    rule.blockAfterClose = event.target.checked;
+    blockDurInput.disabled = locked || !rule.blockAfterClose;
     scheduleSave();
   });
-  blockDurInput.addEventListener('input', e => {
-    const v = parseFloat(e.target.value);
-    if (!isNaN(v) && v > 0) {
-      rule.blockDurationSec = Math.max(1, Math.round(v * 60));
+  blockDurInput.addEventListener('input', event => {
+    const value = parseFloat(event.target.value);
+    if (!isNaN(value) && value > 0) {
+      rule.blockDurationSec = Math.max(1, Math.round(value * 60));
       scheduleSave();
     }
   });
-  enabledCheckbox.addEventListener('change', e => {
-    rule.enabled = e.target.checked;
+  enabledCheckbox.addEventListener('change', event => {
+    rule.enabled = event.target.checked;
     div.classList.toggle('disabled', !rule.enabled);
     scheduleSave();
   });
   delBtn.addEventListener('click', () => {
-    if (confirm(`Delete rule for "${rule.domain || '(empty)'}"?`)) {
-      workingRules = workingRules.filter(r => r.id !== rule.id);
+    if (confirm('Delete rule for "' + (rule.domain || '(empty)') + '"?')) {
+      workingRules = workingRules.filter(item => item.id !== rule.id);
       render();
       scheduleSave();
     }
   });
-
   return div;
 }
 
-let saveT = null;
+function showSaveError(message) {
+  $save.textContent = message || 'Unable to save.';
+  $save.style.color = '#f66';
+}
+
 function scheduleSave() {
   if (saveT) clearTimeout(saveT);
   $save.textContent = 'Saving...';
@@ -196,13 +225,48 @@ function scheduleSave() {
 }
 
 async function save() {
-  if (!workingRules) return;
-  const toSave = workingRules.filter(r => r.domain && r.domain.trim().length > 0);
-  await browser.runtime.sendMessage({ type: 'saveRules', rules: toSave });
+  if (!workingRules) return false;
+  if (saveT) {
+    clearTimeout(saveT);
+    saveT = null;
+  }
+  const rules = workingRules.filter(rule => rule.domain && rule.domain.trim().length > 0);
+  const response = await browser.runtime.sendMessage({ type: 'saveRules', rules });
+  if (!response.ok) {
+    showSaveError(response.error);
+    await initialLoad();
+    return false;
+  }
   $save.textContent = 'Saved.';
   $save.style.color = '#4caf50';
-  setTimeout(() => { $save.textContent = ''; }, 1500);
+  setTimeout(() => { if ($save.textContent === 'Saved.') $save.textContent = ''; }, 1500);
+  return true;
 }
+
+function renderXProtection() {
+  const config = snapshot.xProtection || {};
+  const locked = isLocked(config.disableLockedUntil);
+  $xEnabled.checked = config.enabled === true;
+  $xEnabled.disabled = locked;
+  $xLockMinutes.disabled = locked;
+  $xLockButton.disabled = locked;
+  $xStatus.textContent = locked ? lockText(config.disableLockedUntil) : '';
+}
+
+$xEnabled.addEventListener('change', async () => {
+  const response = await browser.runtime.sendMessage({ type: 'saveXProtection', enabled: $xEnabled.checked });
+  if (!response.ok) showSaveError(response.error);
+  await refreshSnapshot();
+  renderXProtection();
+});
+
+$xLockButton.addEventListener('click', async () => {
+  const durationSec = Math.round(Number($xLockMinutes.value) * 60);
+  const response = await browser.runtime.sendMessage({ type: 'lockXProtection', durationSec });
+  if (!response.ok) showSaveError(response.error);
+  await refreshSnapshot();
+  renderXProtection();
+});
 
 $add.addEventListener('click', () => {
   if (!workingRules) workingRules = [];
@@ -210,21 +274,16 @@ $add.addEventListener('click', () => {
   render();
 });
 
-async function refreshSnapshot() {
-  snapshot = await browser.runtime.sendMessage({ type: 'getState' });
-}
-
-// Live status refresh without rebuilding the form
 setInterval(async () => {
   if (!workingRules) return;
   await refreshSnapshot();
   const ruleEls = $rules.querySelectorAll('.rule');
-  ruleEls.forEach((ruleEl, i) => {
-    const rule = workingRules[i];
-    if (!rule) return;
+  ruleEls.forEach((ruleEl, index) => {
+    const rule = workingRules[index];
     const statusEl = ruleEl.querySelector('.status');
-    if (statusEl) setStatus(statusEl, rule);
+    if (rule && statusEl) setStatus(statusEl, rule);
   });
+  renderXProtection();
 }, 1000);
 
 initialLoad();

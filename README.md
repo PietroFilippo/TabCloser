@@ -9,6 +9,8 @@ Personal-use, Manifest V3. Requires Firefox 140+ (or Zen on a recent build).
 - Per-site timer that counts only while the tab is focused (alt-tab or switch tabs = pause).
 - Auto-close all tabs of a site once the timer hits the limit.
 - Optional block period after close (1 min, 30 min, 2 h, whatever).
+- Timed rule locks that prevent a rule from being disabled, deleted, or changed before expiry.
+- Optional X / Twitter protection that replaces media visibly labelled as sensitive by X; it has its own timed disable lock.
 - Subdomain match — a rule for `twitter.com` also catches `mobile.twitter.com`.
 - Block screen is friction-only: **no unblock button on the page**. To unblock early, open the add-on settings.
 
@@ -34,6 +36,8 @@ Use this when iterating on the source. The add-on unloads on browser restart.
 - Each rule has: domain, close-after (minutes), block-after-close toggle + duration, enabled toggle.
 - The popup shows current active-time progress and any currently blocked sites.
 - Reset the timer or unblock early from the settings page (per-rule buttons).
+- Use "Lock rule" after saving an enabled site to protect its configuration for a chosen number of minutes.
+- Enable the X / Twitter sensitive media blocker and use "Lock protection" to prevent it being turned off until the chosen time expires.
 
 ## Files
 
@@ -51,3 +55,4 @@ Use this when iterating on the source. The add-on unloads on browser restart.
 - Storage lives in `browser.storage.local` — uninstalling clears all rules.
 - After editing source files, reload the add-on from `about:debugging` → TabCloser → **Reload**.
 - The block redirect causes a brief flash before the blocked page appears.
+- The X / Twitter feature uses X timeline/search metadata for media that X has labelled sensitive, with visible warning detection as a fallback. It does not classify media that X has not labelled.

@@ -134,3 +134,13 @@ button.primary:hover { background: #3c7f3c; }
   min-height: 18px;
 }
 .empty-list { color: #777; font-size: 13px; font-style: italic; padding: 8px 0; }
+
+.lock-controls { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; }
+.lock-controls input { width: 72px; padding: 4px 6px; background: #1a1a1a; color: #eee; border: 1px solid #444; border-radius: 4px; }
+.lock-controls button { padding: 5px 9px; background: #3a3a3a; color: #eee; border: 1px solid #555; border-radius: 4px; cursor: pointer; }
+.lock-controls button:disabled { cursor: default; opacity: 0.5; }
+.lock-status { color: #ffb74d; font-size: 12px; min-height: 18px; margin: 8px 0 0; }
+.rule-lock { flex-basis: 100%; color: #ffb74d; margin-top: 4px; }
+.x-protection { border-top: 1px solid #3a3a3a; margin-top: 28px; padding-top: 20px; }
+.x-protection h2 { font-size: 16px; margin: 0 0 5px; }
+.x-protection p { color: #aaa; font-size: 13px; line-height: 1.45; }

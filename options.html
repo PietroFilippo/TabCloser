@@ -11,12 +11,23 @@
     <p class="subtitle">
       Sites listed here close automatically after the chosen amount of <em>active</em>
       tab time. Optionally, the site stays blocked for a chosen duration after the close.
-      To unblock early, use the button on each rule below.
     </p>
 
     <div id="rules"></div>
-
     <button id="addRule" class="primary">+ Add site</button>
+
+    <section class="x-protection" aria-labelledby="xProtectionTitle">
+      <h2 id="xProtectionTitle">X / Twitter protection</h2>
+      <p>Hide media that X visibly labels as sensitive and replace it with a protected-media placeholder.</p>
+      <label class="toggle"><input id="xProtectionEnabled" type="checkbox"> Sensitive media blocker</label>
+      <div class="lock-controls">
+        <label for="xLockMinutes">Lock for</label>
+        <input id="xLockMinutes" type="number" min="1" step="1" value="60">
+        <span>min</span>
+        <button id="lockXProtection" type="button">Lock protection</button>
+      </div>
+      <p id="xProtectionStatus" class="lock-status"></p>
+    </section>
 
     <p id="saveStatus" class="save-status"></p>
   </main>
