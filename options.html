@@ -18,15 +18,25 @@
 
     <section class="x-protection" aria-labelledby="xProtectionTitle">
       <h2 id="xProtectionTitle">X / Twitter protection</h2>
-      <p>Hide X-labelled media and use an on-device adult-content classifier for unmatched images, GIFs, and sampled video. Uncertain or failed checks stay hidden.</p>
-      <label class="toggle"><input id="xProtectionEnabled" type="checkbox"> Mature media blocker</label>
+      <p>Two tiers: hide media X itself labels as mature, or additionally run the on-device adult-content classifier on everything else (uncertain or failed checks stay hidden). Enabling the classifier tier enables and locks together with the label tier.</p>
+
+      <label class="toggle"><input id="xLabeledEnabled" type="checkbox"> Hide media X labels as mature</label>
       <div class="lock-controls">
-        <label for="xLockMinutes">Lock for</label>
-        <input id="xLockMinutes" type="number" min="1" step="1" value="60">
+        <label for="xLabeledLockMinutes">Lock for</label>
+        <input id="xLabeledLockMinutes" type="number" min="1" step="1" value="60">
         <span>min</span>
-        <button id="lockXProtection" type="button">Lock protection</button>
+        <button id="lockXLabeled" type="button">Lock label tier</button>
       </div>
-      <p id="xProtectionStatus" class="lock-status"></p>
+      <p id="xLabeledStatus" class="lock-status"></p>
+
+      <label class="toggle"><input id="xModelEnabled" type="checkbox"> Restrictive: also classify all media on-device</label>
+      <div class="lock-controls">
+        <label for="xModelLockMinutes">Lock for</label>
+        <input id="xModelLockMinutes" type="number" min="1" step="1" value="60">
+        <span>min</span>
+        <button id="lockXModel" type="button">Lock classifier tier</button>
+      </div>
+      <p id="xModelStatus" class="lock-status"></p>
     </section>
 
     <p id="saveStatus" class="save-status"></p>

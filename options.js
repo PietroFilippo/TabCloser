@@ -1,10 +1,14 @@
 const $rules = document.getElementById('rules');
 const $save = document.getElementById('saveStatus');
 const $add = document.getElementById('addRule');
-const $xEnabled = document.getElementById('xProtectionEnabled');
-const $xLockMinutes = document.getElementById('xLockMinutes');
-const $xLockButton = document.getElementById('lockXProtection');
-const $xStatus = document.getElementById('xProtectionStatus');
+const $xLabeled = document.getElementById('xLabeledEnabled');
+const $xLabeledLockMinutes = document.getElementById('xLabeledLockMinutes');
+const $xLabeledLockButton = document.getElementById('lockXLabeled');
+const $xLabeledStatus = document.getElementById('xLabeledStatus');
+const $xModel = document.getElementById('xModelEnabled');
+const $xModelLockMinutes = document.getElementById('xModelLockMinutes');
+const $xModelLockButton = document.getElementById('lockXModel');
+const $xModelStatus = document.getElementById('xModelStatus');
 
 let snapshot = { rules: [], accumSec: {}, blocks: {}, focus: {}, xProtection: {} };
 let workingRules = null;
@@ -245,28 +249,54 @@ async function save() {
 
 function renderXProtection() {
   const config = snapshot.xProtection || {};
-  const locked = isLocked(config.disableLockedUntil);
-  $xEnabled.checked = config.enabled === true;
-  $xEnabled.disabled = locked;
-  $xLockMinutes.disabled = locked;
-  $xLockButton.disabled = locked;
-  $xStatus.textContent = locked ? lockText(config.disableLockedUntil) : '';
+  const labeled = config.labeled || {};
+  const model = config.model || {};
+  const labeledLocked = isLocked(labeled.lockUntil);
+  const modelLocked = isLocked(model.lockUntil);
+
+  $xLabeled.checked = labeled.enabled === true;
+  // The label tier cannot be turned off while it, or the classifier tier that
+  // implies it, is enabled and locked.
+  $xLabeled.disabled = labeledLocked || (model.enabled === true && modelLocked);
+  $xLabeledLockMinutes.disabled = labeledLocked;
+  $xLabeledLockButton.disabled = labeledLocked;
+  $xLabeledStatus.textContent = labeledLocked ? lockText(labeled.lockUntil) : '';
+
+  $xModel.checked = model.enabled === true;
+  $xModel.disabled = modelLocked;
+  $xModelLockMinutes.disabled = modelLocked;
+  $xModelLockButton.disabled = modelLocked;
+  $xModelStatus.textContent = modelLocked ? lockText(model.lockUntil) : '';
 }
 
-$xEnabled.addEventListener('change', async () => {
-  const response = await browser.runtime.sendMessage({ type: 'saveXProtection', enabled: $xEnabled.checked });
+async function saveXProtection(labeledEnabled, modelEnabled) {
+  const response = await browser.runtime.sendMessage({ type: 'saveXProtection', labeled: labeledEnabled, model: modelEnabled });
   if (!response.ok) showSaveError(response.error);
   await refreshSnapshot();
   renderXProtection();
+}
+
+$xLabeled.addEventListener('change', () => {
+  // Disabling the label tier also disables the classifier tier it carries.
+  const labeledEnabled = $xLabeled.checked;
+  saveXProtection(labeledEnabled, labeledEnabled && $xModel.checked);
 });
 
-$xLockButton.addEventListener('click', async () => {
-  const durationSec = Math.round(Number($xLockMinutes.value) * 60);
-  const response = await browser.runtime.sendMessage({ type: 'lockXProtection', durationSec });
+$xModel.addEventListener('change', () => {
+  // Enabling the classifier tier switches the label tier on with it.
+  saveXProtection($xLabeled.checked || $xModel.checked, $xModel.checked);
+});
+
+async function lockXProtection(target, minutesInput) {
+  const durationSec = Math.round(Number(minutesInput.value) * 60);
+  const response = await browser.runtime.sendMessage({ type: 'lockXProtection', target, durationSec });
   if (!response.ok) showSaveError(response.error);
   await refreshSnapshot();
   renderXProtection();
-});
+}
+
+$xLabeledLockButton.addEventListener('click', () => lockXProtection('labeled', $xLabeledLockMinutes));
+$xModelLockButton.addEventListener('click', () => lockXProtection('model', $xModelLockMinutes));
 
 $add.addEventListener('click', () => {
   if (!workingRules) workingRules = [];

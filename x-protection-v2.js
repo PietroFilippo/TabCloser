@@ -1,6 +1,7 @@
-// Fail-closed X media coordinator. X metadata remains the fast path; unmatched
-// media stays hidden until the bundled local classifier reports it as safe.
-let enabled = false;
+// Fail-closed X media coordinator. Modes: 'off'; 'labeled' hides only media
+// X itself marks mature; 'full' additionally runs the bundled local
+// classifier and keeps unmatched media hidden until it reports safe.
+let mode = 'off';
 let operationId = 0;
 const sensitiveUrls = new Set();
 const sensitiveTweetIds = new Set();
@@ -129,11 +130,13 @@ function setRootState(root, state, reason) {
   }
   host.classList.add('tabcloser-overlay-host');
   const overlay = existing || document.createElement('div');
-  overlay.className = 'tabcloser-media-overlay';
+  // Pending media shows through heavily blurred, so its overlay is just a
+  // transparent click shield; protected media gets the opaque notice.
+  overlay.className = 'tabcloser-media-overlay' + (state === 'pending' ? ' tabcloser-media-overlay-pending' : '');
   overlay.setAttribute('role', 'img');
   overlay.setAttribute('aria-live', 'polite');
   overlay.setAttribute('aria-label', state === 'pending' ? 'Media is being checked by TabCloser' : 'Sensitive media hidden by TabCloser');
-  overlay.textContent = state === 'pending' ? 'Checking media?' : 'Sensitive media hidden';
+  overlay.textContent = state === 'pending' ? '' : 'Sensitive media hidden';
   overlay.title = reason || '';
   if (!existing) host.appendChild(overlay);
   root.querySelectorAll('video, audio').forEach(player => {
@@ -283,21 +286,24 @@ function scheduleRetry(root) {
   if (attempt >= retryDelaysMs.length) return;
   record.retries = attempt + 1;
   setTimeout(() => {
-    if (!enabled || !root.isConnected || rootRecords.get(root) !== record) return;
+    if (mode !== 'full' || !root.isConnected || rootRecords.get(root) !== record) return;
     rootRecords.set(root, { ...record, status: 'stale' });
     discoverRoot(root);
   }, retryDelaysMs[attempt]);
 }
 
-// Failure verdicts (couldn't check) only hide their own cell so a retry can
-// release it; a genuine mature verdict hides every media cell in the article.
+// Classifier verdicts are per-image, so they only hide their own cell: every
+// sibling is independently classified and stands on its own judgment, and a
+// false positive must not censor innocent neighbors. Failure verdicts
+// (couldn't check) are also root-scoped so a retry can release them. Only X's
+// own tweet-level label ('metadata') hides every media cell in the article.
 function protectUnsafeResult(root, reason) {
-  if (/^(?:error|timeout|invalid)$/.test(reason)) {
-    setRootState(root, 'protected', reason);
-    if (retryableReason.test(reason)) scheduleRetry(root);
-  } else {
+  if (reason === 'metadata') {
     protectGroup(root, reason);
+    return;
   }
+  setRootState(root, 'protected', reason);
+  if (retryableReason.test(reason)) scheduleRetry(root);
 }
 
 async function classifyRoot(root, fingerprint, token) {
@@ -328,7 +334,7 @@ async function classifyRoot(root, fingerprint, token) {
     }
 
     const current = rootRecords.get(root);
-    if (!enabled || !root.isConnected || current?.token !== token) return;
+    if (mode !== 'full' || !root.isConnected || current?.token !== token) return;
     if (rootFingerprint(root) !== fingerprint) {
       discoverRoot(root);
       return;
@@ -339,7 +345,7 @@ async function classifyRoot(root, fingerprint, token) {
     }
     setRootState(root, 'safe', 'visual');
   } catch (error) {
-    if (enabled && root.isConnected && rootRecords.get(root)?.token === token) {
+    if (mode === 'full' && root.isConnected && rootRecords.get(root)?.token === token) {
       protectUnsafeResult(root, /timeout/i.test(error?.message || '') ? 'timeout' : 'error');
     }
   }
@@ -347,7 +353,7 @@ async function classifyRoot(root, fingerprint, token) {
 
 const intersectionObserver = new IntersectionObserver(entries => {
   for (const entry of entries) {
-    if (!entry.isIntersecting || !enabled) continue;
+    if (!entry.isIntersecting || mode !== 'full') continue;
     intersectionObserver.unobserve(entry.target);
     const record = rootRecords.get(entry.target);
     if (record?.status === 'pending') classifyRoot(entry.target, record.fingerprint, record.token);
@@ -355,7 +361,13 @@ const intersectionObserver = new IntersectionObserver(entries => {
 }, { rootMargin: '300px 0px' });
 
 function discoverRoot(root) {
-  if (!enabled || !root?.isConnected) return;
+  if (mode === 'off' || !root?.isConnected) return;
+  if (mode === 'labeled') {
+    // Labeled tier: only X's own mature label hides media; nothing is queued
+    // for classification and unflagged media stays untouched.
+    if (metadataProtects(root)) protectGroup(root, 'metadata');
+    return;
+  }
   const fingerprint = rootFingerprint(root);
   if (!fingerprint || fingerprint === 'none') return;
   const previous = rootRecords.get(root);
@@ -381,19 +393,19 @@ function discoverWithin(container) {
 function scanKnownRootsForMetadata() {
   document.querySelectorAll('[data-tabcloser-media-state], ' + mediaSelector).forEach(node => {
     const root = mediaRootFor(node) || node;
-    if (enabled && metadataProtects(root)) protectGroup(root, 'metadata');
+    if (mode !== 'off' && metadataProtects(root)) protectGroup(root, 'metadata');
   });
 }
 
 function setProtection(config) {
-  enabled = config?.enabled === true;
-  document.documentElement.dataset.tabcloserXProtection = enabled ? 'on' : 'off';
+  const modelEnabled = config?.model?.enabled === true;
+  const labeledEnabled = modelEnabled || config?.labeled?.enabled === true || config?.enabled === true;
+  mode = modelEnabled ? 'full' : labeledEnabled ? 'labeled' : 'off';
+  document.documentElement.dataset.tabcloserXProtection = mode;
   operationId += 1;
-  if (enabled) discoverWithin(document);
-  else {
-    intersectionObserver.disconnect();
-    clearAllStates();
-  }
+  intersectionObserver.disconnect();
+  clearAllStates();
+  if (mode !== 'off') discoverWithin(document);
 }
 
 function addSensitiveMetadata(metadata) {
@@ -402,11 +414,11 @@ function addSensitiveMetadata(metadata) {
     if (normalized) sensitiveUrls.add(normalized);
   }
   for (const tweetId of metadata?.tweetIds || []) sensitiveTweetIds.add(String(tweetId));
-  if (enabled) scanKnownRootsForMetadata();
+  if (mode !== 'off') scanKnownRootsForMetadata();
 }
 
 function blockPendingOrProtectedActivation(event) {
-  if (!enabled || !(event.target instanceof Element)) return;
+  if (mode === 'off' || !(event.target instanceof Element)) return;
   // .tabcloser-overlay-host guards the full clickable cell, which extends
   // beyond the media root that carries the state attribute.
   const root = event.target.closest('[data-tabcloser-media-state="pending"], [data-tabcloser-media-state="protected"], .tabcloser-overlay-host');
@@ -422,9 +434,13 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Enter' || event.key === ' ') blockPendingOrProtectedActivation(event);
 }, true);
 document.addEventListener('play', event => {
-  if (!enabled || !(event.target instanceof HTMLMediaElement)) return;
+  if (mode === 'off' || !(event.target instanceof HTMLMediaElement)) return;
   const root = mediaRootFor(event.target);
-  if (root?.dataset.tabcloserMediaState !== 'safe') {
+  const rootState = root?.dataset.tabcloserMediaState;
+  // Full mode is fail-closed (only verified-safe may play); labeled mode only
+  // stops media that X's label explicitly protected.
+  const blocked = mode === 'full' ? rootState !== 'safe' : rootState === 'pending' || rootState === 'protected';
+  if (blocked) {
     event.target.pause();
     event.target.muted = true;
   }
@@ -436,7 +452,7 @@ browser.runtime.onMessage.addListener(message => {
 });
 
 new MutationObserver(mutations => {
-  if (!enabled) return;
+  if (mode === 'off') return;
   for (const mutation of mutations) {
     if (mutation.type === 'attributes') discoverRoot(mediaRootFor(mutation.target));
     else for (const node of mutation.addedNodes) if (node instanceof Element) discoverWithin(node);
@@ -450,4 +466,4 @@ new MutationObserver(mutations => {
 
 browser.storage.local.get('xProtection')
   .then(data => setProtection(data.xProtection))
-  .catch(() => setProtection({ enabled: false }));
+  .catch(() => setProtection(null));

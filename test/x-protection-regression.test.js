@@ -14,11 +14,13 @@ test('candidate discovery excludes profile/card images and bare status-link desc
   assert.doesNotMatch(stylesheet, /card\.wrapper/);
 });
 
-test('safe-state visibility override follows the fail-closed hiding rule', () => {
+test('verdict roots override the fail-closed hiding rule', () => {
   const hideIndex = stylesheet.indexOf(':not([data-tabcloser-x-protection="off"])');
-  const safeIndex = stylesheet.indexOf('[data-tabcloser-media-state="safe"]');
+  const anchorIndex = stylesheet.search(/\[data-tabcloser-media-state\] \{[^}]*visibility: visible !important/);
   assert.ok(hideIndex >= 0);
-  assert.ok(safeIndex > hideIndex);
+  assert.ok(anchorIndex > hideIndex, 'the verdict re-anchor must follow the hide rule');
+  assert.match(stylesheet, /:where\(html/, 'the hide rule must stay at zero specificity so nested verdict roots win');
+  assert.match(stylesheet, /:where\(:not\(\[data-tabcloser-media-state\]\)\) > \*/, 'hiding applies to direct children only');
 });
 
 test('inference runs in a worker with webgl acceleration and a cpu fallback', () => {
@@ -37,15 +39,34 @@ test('graphql response bytes stream through before metadata parsing', () => {
   assert.ok(onData >= 0 && write > onData && write < onStop, 'filter must forward each chunk inside ondata');
 });
 
+test('pending and protected media show blurred previews while staying unplayable and unclickable', () => {
+  // Blur targets the root's children (not bare img/video selectors) because X
+  // renders photos as background-image divs the img selector misses.
+  assert.match(stylesheet, /\[data-tabcloser-media-state="pending"\] > :not\(\.tabcloser-media-overlay\) \{[^}]*blur\(/);
+  assert.match(stylesheet, /\[data-tabcloser-media-state="protected"\] > :not\(\.tabcloser-media-overlay\) \{[^}]*blur\(/);
+  assert.match(stylesheet, /\.tabcloser-media-overlay-pending \{[^}]*background: transparent !important/);
+  assert.match(stylesheet, /\.tabcloser-media-overlay \{[^}]*rgba\(/, 'protected overlay must be translucent over the blur');
+  assert.match(coordinator, /tabcloser-media-overlay-pending/);
+});
+
+test('labeled mode hides only X-labelled media; full mode stays fail-closed', () => {
+  const background = readFileSync(path.join(root, 'background.js'), 'utf8');
+  assert.match(coordinator, /if \(mode === 'labeled'\) \{[\s\S]{0,220}metadataProtects\(root\)[\s\S]{0,80}return;/);
+  assert.match(stylesheet, /:not\(\[data-tabcloser-x-protection="labeled"\]\)/, 'default hiding must not apply in labeled mode');
+  assert.match(background, /state\.xProtection\.labeled\.enabled/, 'metadata observer keyed to the labeled tier');
+  assert.match(background, /state\.xProtection\.model\.enabled/, 'classifier keyed to the model tier');
+  assert.match(background, /legacyEnabled/, 'legacy single-toggle settings must migrate');
+});
+
 test('transient classification failures retry with backoff instead of censoring forever', () => {
   assert.match(coordinator, /scheduleRetry\(root\)/);
   assert.match(coordinator, /\^\(\?:error\|timeout\)\$/, 'only error and timeout verdicts may retry');
   assert.match(coordinator, /previous\?\.fingerprint === fingerprint \? previous\.retries \|\| 0 : 0/, 'retry budget must reset when media changes');
 });
 
-test('failure verdicts hide only their own cell; mature verdicts hide the whole group', () => {
+test('classifier and failure verdicts hide only their own cell; only X labels hide the group', () => {
   assert.match(coordinator, /function protectUnsafeResult/);
-  assert.match(coordinator, /\^\(\?:error\|timeout\|invalid\)\$/, 'failure reasons are root-scoped');
+  assert.match(coordinator, /if \(reason === 'metadata'\) \{\s*protectGroup\(root, reason\);/, 'only the tweet-level X label spreads to siblings');
   assert.doesNotMatch(coordinator, /protectGroup\(root, result\.reason/, 'classification results must route through protectUnsafeResult');
 });
 

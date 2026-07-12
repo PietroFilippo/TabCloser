@@ -3,7 +3,12 @@ const state = {
   rules: [],          // [{ id, domain, closeAfterSec, blockAfterClose, blockDurationSec, enabled }]
   accumSec: {},       // { [normalizedDomain]: accumulated active seconds }
   blocks: {},         // { [normalizedDomain]: { until: epochMs } }
-  xProtection: { enabled: false, disableLockedUntil: null },
+  // Two tiers: 'labeled' hides only media X itself marks mature; 'model' adds
+  // the on-device classifier. model implies labeled (enable and lock).
+  xProtection: {
+    labeled: { enabled: false, lockUntil: null },
+    model: { enabled: false, lockUntil: null },
+  },
   focus: { tabId: null, domain: null, enteredAt: null }, // not persisted
 };
 
@@ -11,14 +16,28 @@ let closeTimer = null;
 let bootPromise = null;
 
 // === Persistence ===
+function finiteOrNull(value) {
+  return Number.isFinite(value) ? value : null;
+}
+
 async function loadState() {
   const data = await browser.storage.local.get(['rules', 'accumSec', 'blocks', 'xProtection']);
   state.rules = data.rules ?? [];
   state.accumSec = data.accumSec ?? {};
   state.blocks = data.blocks ?? {};
+  const raw = data.xProtection ?? {};
+  // Migrate the legacy single-toggle shape { enabled, disableLockedUntil }.
+  const legacyEnabled = raw.enabled === true;
+  const legacyLock = finiteOrNull(raw.disableLockedUntil);
   state.xProtection = {
-    enabled: data.xProtection?.enabled === true,
-    disableLockedUntil: Number.isFinite(data.xProtection?.disableLockedUntil) ? data.xProtection.disableLockedUntil : null,
+    labeled: {
+      enabled: raw.labeled?.enabled === true || legacyEnabled,
+      lockUntil: finiteOrNull(raw.labeled?.lockUntil) ?? legacyLock,
+    },
+    model: {
+      enabled: raw.model?.enabled === true || legacyEnabled,
+      lockUntil: finiteOrNull(raw.model?.lockUntil) ?? legacyLock,
+    },
   };
 }
 
@@ -282,7 +301,7 @@ function extractSensitiveMedia(payload) {
 const xTweetOperationPattern = /Timeline|Tweet|Search|Bookmark|Media|Conversation|List|Detail|Likes|Explore/i;
 
 function observeXGraphqlResponse(details) {
-  if (!state.xProtection.enabled || details.tabId < 0) return;
+  if (!state.xProtection.labeled.enabled || details.tabId < 0) return;
   const operation = new URL(details.url).pathname.split('/').pop() || '';
   if (!xTweetOperationPattern.test(operation)) return;
   console.debug('[DEBUG-xmeta-9b4c] observing X response', new URL(details.url).pathname);
@@ -430,7 +449,7 @@ function imageDataFromFrameMessage(msg) {
 }
 
 async function classifyXMedia(msg, sender) {
-  if (!state.xProtection.enabled || !isXPageUrl(sender?.tab?.url || sender?.url || '')) {
+  if (!state.xProtection.model.enabled || !isXPageUrl(sender?.tab?.url || sender?.url || '')) {
     return { verdict: 'protect', reason: 'invalid', modelVersion: TabCloserXVerdict.MODEL_VERSION };
   }
   const mediaKey = typeof msg.mediaKey === 'string' ? msg.mediaKey.slice(0, 2048) : '';
@@ -533,20 +552,35 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
       return { ok: true, until };
     }
     case 'saveXProtection': {
-      const enabled = msg.enabled === true;
-      if (isLockActive(state.xProtection.disableLockedUntil) && !enabled) return { ok: false, error: 'X protection is locked until ' + new Date(state.xProtection.disableLockedUntil).toLocaleString() + '.' };
-      state.xProtection.enabled = enabled;
-      if (enabled) TabCloserClassifier.warmUp();
+      // model implies labeled: requesting the model tier turns labeled on too.
+      const modelEnabled = msg.model === true;
+      const labeledEnabled = msg.labeled === true || modelEnabled;
+      const current = state.xProtection;
+      if (current.labeled.enabled && !labeledEnabled && isLockActive(current.labeled.lockUntil)) {
+        return { ok: false, error: 'X-label protection is locked until ' + new Date(current.labeled.lockUntil).toLocaleString() + '.' };
+      }
+      if (current.model.enabled && !modelEnabled && isLockActive(current.model.lockUntil)) {
+        return { ok: false, error: 'The classifier tier is locked until ' + new Date(current.model.lockUntil).toLocaleString() + '.' };
+      }
+      current.labeled.enabled = labeledEnabled;
+      current.model.enabled = modelEnabled;
+      if (modelEnabled) TabCloserClassifier.warmUp();
       await persist();
       await notifyXProtection();
       return { ok: true };
     }
     case 'lockXProtection': {
+      const target = msg.target === 'model' ? 'model' : 'labeled';
+      const tier = state.xProtection[target];
       const durationSec = Math.round(Number(msg.durationSec));
-      if (!state.xProtection.enabled || !Number.isFinite(durationSec) || durationSec < 60) return { ok: false, error: 'Enable X protection and choose at least one minute.' };
+      if (!tier.enabled || !Number.isFinite(durationSec) || durationSec < 60) return { ok: false, error: 'Enable that protection tier and choose at least one minute.' };
       const until = Date.now() + durationSec * 1000;
-      if (isLockActive(state.xProtection.disableLockedUntil) && until <= state.xProtection.disableLockedUntil) return { ok: false, error: 'An X protection lock cannot be shortened.' };
-      state.xProtection.disableLockedUntil = until;
+      if (isLockActive(tier.lockUntil) && until <= tier.lockUntil) return { ok: false, error: 'A protection lock cannot be shortened.' };
+      tier.lockUntil = until;
+      // Locking the classifier tier must also pin the labeled tier it implies.
+      if (target === 'model') {
+        state.xProtection.labeled.lockUntil = Math.max(state.xProtection.labeled.lockUntil ?? 0, until);
+      }
       await persist();
       await notifyXProtection();
       return { ok: true, until };
@@ -579,7 +613,7 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
 // === Boot ===
 bootPromise = (async () => {
   await loadState();
-  if (state.xProtection.enabled) TabCloserClassifier.warmUp();
+  if (state.xProtection.model.enabled) TabCloserClassifier.warmUp();
   // Periodic safety commit (0.5 min = Firefox MV3 minimum for installed addons)
   browser.alarms.create('commit', { periodInMinutes: 0.5 });
   await handleFocusChange();

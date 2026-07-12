@@ -1,18 +1,34 @@
-html:not([data-tabcloser-x-protection="off"]) [data-testid="tweetPhoto"] img,
-html:not([data-tabcloser-x-protection="off"]) [data-testid="videoComponent"] video,
-html:not([data-tabcloser-x-protection="off"]) [data-testid="videoPlayer"] video,
-[data-tabcloser-media-state="pending"] img,
-[data-tabcloser-media-state="pending"] video,
-[data-tabcloser-media-state="protected"] img,
-[data-tabcloser-media-state="protected"] video {
+/* Fail-closed hiding applies only in full (classifier) mode: media containers
+   without a TabCloser verdict hide their direct children until verified. In
+   labeled mode media shows unless X's own label protects it; before init (no
+   attribute yet) stay hidden. Only direct children are hidden so a nested
+   media root (X nests videoPlayer inside videoComponent) can re-anchor its
+   own subtree once it has a verdict. X also renders photos as background-image
+   divs, which child hiding covers and a plain img selector would miss. */
+:where(html:not([data-tabcloser-x-protection="off"]):not([data-tabcloser-x-protection="labeled"])) :where([data-testid="tweetPhoto"], [data-testid="videoComponent"], [data-testid="videoPlayer"]):where(:not([data-tabcloser-media-state])) > * {
+  /* :where keeps this at zero specificity so any verdict rule below wins. */
   visibility: hidden !important;
 }
 
-html[data-tabcloser-x-protection="on"] [data-tabcloser-media-state="safe"] img,
-html[data-tabcloser-x-protection="on"] [data-tabcloser-media-state="safe"] video,
-html[data-tabcloser-x-protection="off"] [data-testid] img,
-html[data-tabcloser-x-protection="off"] [data-testid] video {
+/* Any root with a verdict ("safe", "pending", "protected") re-anchors
+   visibility for its subtree; pending/protected control exposure via blur. */
+[data-tabcloser-media-state] {
   visibility: visible !important;
+}
+
+/* Checked-pending and protected media show through unrecognizably blurred
+   instead of a flat box; the slight scale keeps sharp edges from leaking
+   past the blur. Protected media blurs harder. */
+[data-tabcloser-media-state="pending"] > :not(.tabcloser-media-overlay) {
+  visibility: visible !important;
+  filter: blur(32px) saturate(0.8) !important;
+  transform: scale(1.15) !important;
+}
+
+[data-tabcloser-media-state="protected"] > :not(.tabcloser-media-overlay) {
+  visibility: visible !important;
+  filter: blur(56px) saturate(0.6) !important;
+  transform: scale(1.2) !important;
 }
 
 [data-tabcloser-media-state="pending"],
@@ -31,10 +47,10 @@ html[data-tabcloser-x-protection="off"] [data-testid] video {
 
 .tabcloser-media-overlay {
   align-items: center !important;
-  background: #202020 !important;
-  border: 1px solid #555 !important;
+  background: rgba(12, 12, 12, 0.45) !important;
+  border: 1px solid rgba(85, 85, 85, 0.6) !important;
   box-sizing: border-box !important;
-  color: #e6e6e6 !important;
+  color: #f2f2f2 !important;
   display: flex !important;
   font: 600 14px system-ui, sans-serif !important;
   inset: 0 !important;
@@ -43,7 +59,14 @@ html[data-tabcloser-x-protection="off"] [data-testid] video {
   padding: 20px !important;
   position: absolute !important;
   text-align: center !important;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9) !important;
   z-index: 2147483646 !important;
+}
+
+/* Pending overlay is only a click shield above the blurred preview. */
+.tabcloser-media-overlay-pending {
+  background: transparent !important;
+  border: none !important;
 }
 
 .tabcloser-video-probe {
