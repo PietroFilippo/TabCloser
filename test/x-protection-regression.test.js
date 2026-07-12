@@ -44,9 +44,24 @@ test('pending and protected media show blurred previews while staying unplayable
   // renders photos as background-image divs the img selector misses.
   assert.match(stylesheet, /\[data-tabcloser-media-state="pending"\] > :not\(\.tabcloser-media-overlay\) \{[^}]*blur\(/);
   assert.match(stylesheet, /\[data-tabcloser-media-state="protected"\] > :not\(\.tabcloser-media-overlay\) \{[^}]*blur\(/);
-  assert.match(stylesheet, /\.tabcloser-media-overlay-pending \{[^}]*background: transparent !important/);
+  assert.match(stylesheet, /\.tabcloser-media-overlay-pending \{[^}]*background-color: transparent !important/);
   assert.match(stylesheet, /\.tabcloser-media-overlay \{[^}]*rgba\(/, 'protected overlay must be translucent over the blur');
   assert.match(coordinator, /tabcloser-media-overlay-pending/);
+});
+
+test('protected media is covered by a deterministic sacred-art painting with a corner notice', () => {
+  const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  assert.ok(manifest.web_accessible_resources.some(entry => entry.resources.includes('assets/sacred-art/*')),
+    'paintings must be web-accessible on X pages');
+  assert.ok(manifest.content_scripts[0].js.includes('sacred-art-list.js'), 'the generated art list must load before the coordinator');
+  assert.match(coordinator, /hashString\(rootFingerprint\(root\)\)/, 'artwork choice must be deterministic per media');
+  assert.match(coordinator, /state === 'protected' && mature \? sacredArtUrlFor\(root\) : null/,
+    'only confirmed mature verdicts may show a painting');
+  assert.match(coordinator, /willRetry = state === 'protected' && !mature && retryableReason\.test/,
+    'failure verdicts awaiting retry must render like the pending state');
+  assert.match(stylesheet, /\.tabcloser-media-overlay-art \{[^}]*background-size: cover !important/);
+  assert.match(stylesheet, /\.tabcloser-media-overlay \{[^}]*background-color:/, 'the base overlay must not use the background shorthand, which would reset the painting');
+  assert.doesNotMatch(stylesheet, /\.tabcloser-media-overlay \{[^}]*background: rgba/);
 });
 
 test('labeled mode hides only X-labelled media; full mode stays fail-closed', () => {

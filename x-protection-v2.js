@@ -117,6 +117,20 @@ function overlayFor(root) {
   return [...overlayHostFor(root).children].find(child => child.classList?.contains('tabcloser-media-overlay')) || null;
 }
 
+function hashString(value) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  return hash;
+}
+
+// Deterministic per-media pick so re-renders never shuffle the artwork.
+function sacredArtUrlFor(root) {
+  const artList = globalThis.TabCloserSacredArt || [];
+  if (!artList.length) return null;
+  const pick = artList[hashString(rootFingerprint(root)) % artList.length];
+  return browser.runtime.getURL('assets/sacred-art/' + pick);
+}
+
 function setRootState(root, state, reason) {
   if (!root?.isConnected) return;
   root.dataset.tabcloserMediaState = state;
@@ -130,13 +144,29 @@ function setRootState(root, state, reason) {
   }
   host.classList.add('tabcloser-overlay-host');
   const overlay = existing || document.createElement('div');
-  // Pending media shows through heavily blurred, so its overlay is just a
-  // transparent click shield; protected media gets the opaque notice.
-  overlay.className = 'tabcloser-media-overlay' + (state === 'pending' ? ' tabcloser-media-overlay-pending' : '');
+  // Pending media shows through heavily blurred behind a transparent click
+  // shield. The painting and notice are reserved for confirmed mature
+  // verdicts; a failure verdict that will still be retried renders like the
+  // pending state so a successful retry never pops artwork in and out.
+  const mature = reason === 'visual' || reason === 'metadata';
+  const willRetry = state === 'protected' && !mature && retryableReason.test(reason || '') &&
+    (rootRecords.get(root)?.retries || 0) < retryDelaysMs.length;
+  const shieldOnly = state === 'pending' || willRetry;
+  const artUrl = state === 'protected' && mature ? sacredArtUrlFor(root) : null;
+  overlay.className = 'tabcloser-media-overlay' +
+    (shieldOnly ? ' tabcloser-media-overlay-pending' : '') +
+    (artUrl ? ' tabcloser-media-overlay-art' : '');
+  overlay.style.backgroundImage = artUrl ? 'url("' + artUrl + '")' : '';
   overlay.setAttribute('role', 'img');
   overlay.setAttribute('aria-live', 'polite');
-  overlay.setAttribute('aria-label', state === 'pending' ? 'Media is being checked by TabCloser' : 'Sensitive media hidden by TabCloser');
-  overlay.textContent = state === 'pending' ? '' : 'Sensitive media hidden';
+  overlay.setAttribute('aria-label', shieldOnly ? 'Media is being checked by TabCloser' : 'Sensitive media hidden by TabCloser');
+  overlay.textContent = '';
+  if (!shieldOnly) {
+    const label = document.createElement('span');
+    label.className = 'tabcloser-overlay-label';
+    label.textContent = 'Sensitive media hidden';
+    overlay.appendChild(label);
+  }
   overlay.title = reason || '';
   if (!existing) host.appendChild(overlay);
   root.querySelectorAll('video, audio').forEach(player => {
