@@ -52,6 +52,7 @@ function defaultRule() {
     closeAfterSec: 180,
     blockAfterClose: true,
     blockDurationSec: 1800,
+    lockUnblock: true,
     enabled: true,
     disableLockedUntil: null,
   };
@@ -92,9 +93,12 @@ function buildStatus(rule) {
   frag.appendChild(el('button', { class: 'reset', 'data-action': 'reset' }, 'Reset timer'));
 
   if (blockActive) {
+    const unblockLocked = rule.lockUnblock && isLocked(rule.disableLockedUntil);
     frag.appendChild(el('div', { class: 'blocked-line' }, [
-      'Blocked; unblocks in ' + formatDuration((block.until - Date.now()) / 1000) + ' ',
-      el('button', { class: 'unblock', 'data-action': 'unblock' }, 'Unblock now'),
+      'Blocked; unblocks in ' + formatDuration((block.until - Date.now()) / 1000),
+      unblockLocked
+        ? el('span', { class: 'unblock-locked' }, '· early unblock locked')
+        : el('button', { class: 'unblock', 'data-action': 'unblock' }, 'Unblock now'),
     ]));
   }
   return frag;
@@ -110,14 +114,15 @@ function setStatus(statusEl, rule) {
   });
   statusEl.querySelector('[data-action="unblock"]')?.addEventListener('click', async () => {
     if (!confirm('Unblock ' + normalizeRuleDomain(rule.domain) + ' now?')) return;
-    await browser.runtime.sendMessage({ type: 'unblock', domain: rule.domain });
+    const response = await browser.runtime.sendMessage({ type: 'unblock', domain: rule.domain });
+    if (!response.ok) showSaveError(response.error);
     await refreshSnapshot();
     setStatus(statusEl, rule);
   });
 }
 
 function lockControls(rule, locked) {
-  if (locked) return el('div', { class: 'rule-lock' }, lockText(rule.disableLockedUntil));
+  if (locked) return el('div', { class: 'rule-lock' }, '🔒 ' + lockText(rule.disableLockedUntil));
   const minutes = el('input', { type: 'number', min: '1', step: '1', value: '60' });
   const button = el('button', { type: 'button' }, 'Lock rule');
   button.addEventListener('click', async () => {
@@ -168,6 +173,13 @@ function renderRule(rule) {
     el('span', null, 'min'),
   ]));
 
+  const lockUnblockCheckbox = el('input', { type: 'checkbox' });
+  lockUnblockCheckbox.checked = !!rule.lockUnblock;
+  lockUnblockCheckbox.disabled = locked;
+  div.appendChild(el('div', { class: 'field' }, [
+    el('label', { class: 'toggle' }, [lockUnblockCheckbox, ' Lock also prevents "Unblock now"']),
+  ]));
+
   const enabledCheckbox = el('input', { type: 'checkbox' });
   enabledCheckbox.checked = rule.enabled;
   enabledCheckbox.disabled = locked;
@@ -200,6 +212,10 @@ function renderRule(rule) {
       rule.blockDurationSec = Math.max(1, Math.round(value * 60));
       scheduleSave();
     }
+  });
+  lockUnblockCheckbox.addEventListener('change', event => {
+    rule.lockUnblock = event.target.checked;
+    scheduleSave();
   });
   enabledCheckbox.addEventListener('change', event => {
     rule.enabled = event.target.checked;

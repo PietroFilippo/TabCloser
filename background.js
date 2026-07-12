@@ -518,6 +518,7 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
           closeAfterSec: Math.max(1, Math.round(r.closeAfterSec)),
           blockAfterClose: !!r.blockAfterClose,
           blockDurationSec: Math.max(1, Math.round(r.blockDurationSec)),
+          lockUnblock: !!r.lockUnblock,
           enabled: r.enabled !== false,
         }));
       const existingById = new Map(state.rules.map(rule => [rule.id, rule]));
@@ -527,7 +528,8 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
         if (!replacement || !replacement.enabled || replacement.domain !== existing.domain ||
             replacement.closeAfterSec !== existing.closeAfterSec ||
             replacement.blockAfterClose !== existing.blockAfterClose ||
-            replacement.blockDurationSec !== existing.blockDurationSec) {
+            replacement.blockDurationSec !== existing.blockDurationSec ||
+            replacement.lockUnblock !== !!existing.lockUnblock) {
           return { ok: false, error: 'Rule for ' + existing.domain + ' is locked until ' + new Date(existing.disableLockedUntil).toLocaleString() + '.' };
         }
       }
@@ -595,6 +597,10 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
       };
     case 'unblock': {
       const key = normalizeRuleDomain(msg.domain);
+      const rule = state.rules.find(item => normalizeRuleDomain(item.domain) === key);
+      if (rule?.lockUnblock && isLockActive(rule.disableLockedUntil)) {
+        return { ok: false, error: 'Early unblock for ' + key + ' is locked until ' + new Date(rule.disableLockedUntil).toLocaleString() + '.' };
+      }
       delete state.blocks[key];
       state.accumSec[key] = 0;
       await persist();
