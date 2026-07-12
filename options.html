@@ -23,10 +23,17 @@
       <label class="toggle"><input id="xLabeledEnabled" type="checkbox"> Hide media X labels as mature</label>
       <span class="help-tip" tabindex="0" role="note" aria-label="About this mode" data-tip="Only hides media that X itself labels as sensitive (the poster's own flag or X's warning). Mature content the poster did not label is NOT censored. Nothing is analyzed on your device and unlabeled media is untouched.">?</span>
       <div class="lock-controls">
-        <label for="xLabeledLockMinutes">Lock for</label>
-        <input id="xLabeledLockMinutes" type="number" min="1" step="1" value="60">
-        <span>min</span>
-        <button id="lockXLabeled" type="button">Lock label tier</button>
+        <label for="xLabeledLockAmount">Lock for</label>
+        <input id="xLabeledLockAmount" type="number" min="1" step="1" value="60">
+        <select id="xLabeledLockUnit">
+          <option value="60">minutes</option>
+          <option value="3600">hours</option>
+          <option value="86400">days</option>
+        </select>
+        <button id="lockXLabeled" type="button">Lock</button>
+        <span class="lock-or">or until</span>
+        <input id="xLabeledLockDate" type="datetime-local">
+        <button id="lockXLabeledDate" type="button">Lock until date</button>
       </div>
       <p id="xLabeledStatus" class="lock-status"></p>
 
@@ -40,10 +47,17 @@
         <span class="help-tip" tabindex="0" role="note" aria-label="About sensitivity" data-tip="How aggressive the classifier is. Strict censors more (fewer misses, more false alarms on harmless photos); Lenient censors less (fewer false alarms, more misses). While the classifier tier is locked, sensitivity can be raised but not lowered.">?</span>
       </div>
       <div class="lock-controls">
-        <label for="xModelLockMinutes">Lock for</label>
-        <input id="xModelLockMinutes" type="number" min="1" step="1" value="60">
-        <span>min</span>
-        <button id="lockXModel" type="button">Lock classifier tier</button>
+        <label for="xModelLockAmount">Lock for</label>
+        <input id="xModelLockAmount" type="number" min="1" step="1" value="60">
+        <select id="xModelLockUnit">
+          <option value="60">minutes</option>
+          <option value="3600">hours</option>
+          <option value="86400">days</option>
+        </select>
+        <button id="lockXModel" type="button">Lock</button>
+        <span class="lock-or">or until</span>
+        <input id="xModelLockDate" type="datetime-local">
+        <button id="lockXModelDate" type="button">Lock until date</button>
       </div>
       <p id="xModelStatus" class="lock-status"></p>
     </section>

@@ -2,14 +2,20 @@ const $rules = document.getElementById('rules');
 const $save = document.getElementById('saveStatus');
 const $add = document.getElementById('addRule');
 const $xLabeled = document.getElementById('xLabeledEnabled');
-const $xLabeledLockMinutes = document.getElementById('xLabeledLockMinutes');
+const $xLabeledLockAmount = document.getElementById('xLabeledLockAmount');
+const $xLabeledLockUnit = document.getElementById('xLabeledLockUnit');
 const $xLabeledLockButton = document.getElementById('lockXLabeled');
+const $xLabeledLockDate = document.getElementById('xLabeledLockDate');
+const $xLabeledLockDateButton = document.getElementById('lockXLabeledDate');
 const $xLabeledStatus = document.getElementById('xLabeledStatus');
 const $xModel = document.getElementById('xModelEnabled');
 const $xSensitivityRadios = [...document.querySelectorAll('input[name="xSensitivity"]')];
 const sensitivityRank = { lenient: 0, balanced: 1, strict: 2 };
-const $xModelLockMinutes = document.getElementById('xModelLockMinutes');
+const $xModelLockAmount = document.getElementById('xModelLockAmount');
+const $xModelLockUnit = document.getElementById('xModelLockUnit');
 const $xModelLockButton = document.getElementById('lockXModel');
+const $xModelLockDate = document.getElementById('xModelLockDate');
+const $xModelLockDateButton = document.getElementById('lockXModelDate');
 const $xModelStatus = document.getElementById('xModelStatus');
 
 let snapshot = { rules: [], accumSec: {}, blocks: {}, focus: {}, xProtection: {} };
@@ -45,6 +51,20 @@ function isLocked(until) {
 
 function lockText(until) {
   return 'Locked until ' + new Date(until).toLocaleString() + '.';
+}
+
+function durationSecFrom(amountInput, unitSelect) {
+  const amount = Number(amountInput.value);
+  const unitSec = Number(unitSelect.value);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return Math.round(amount * unitSec);
+}
+
+function durationSecUntilDate(dateInput) {
+  if (!dateInput.value) return null;
+  const target = new Date(dateInput.value).getTime();
+  if (!Number.isFinite(target)) return null;
+  return Math.round((target - Date.now()) / 1000);
 }
 
 function defaultRule() {
@@ -125,21 +145,36 @@ function setStatus(statusEl, rule) {
 
 function lockControls(rule, locked) {
   if (locked) return el('div', { class: 'rule-lock' }, '🔒 ' + lockText(rule.disableLockedUntil));
-  const minutes = el('input', { type: 'number', min: '1', step: '1', value: '60' });
-  const button = el('button', { type: 'button' }, 'Lock rule');
-  button.addEventListener('click', async () => {
-    const durationSec = Math.round(Number(minutes.value) * 60);
+  const amount = el('input', { type: 'number', min: '1', step: '1', value: '60' });
+  const unit = el('select', null, [
+    el('option', { value: '60' }, 'minutes'),
+    el('option', { value: '3600' }, 'hours'),
+    el('option', { value: '86400' }, 'days'),
+  ]);
+  const date = el('input', { type: 'datetime-local' });
+
+  async function lockRule(durationSec) {
+    if (durationSec == null || durationSec < 60) return showSaveError('Choose a duration of at least one minute (dates must be in the future).');
     const saved = await save();
     if (!saved) return;
     const response = await browser.runtime.sendMessage({ type: 'lockRule', id: rule.id, durationSec });
     if (!response.ok) return showSaveError(response.error);
     await initialLoad();
-  });
+  }
+
+  const durationButton = el('button', { type: 'button' }, 'Lock');
+  durationButton.addEventListener('click', () => lockRule(durationSecFrom(amount, unit)));
+  const dateButton = el('button', { type: 'button' }, 'Lock until date');
+  dateButton.addEventListener('click', () => lockRule(durationSecUntilDate(date)));
+
   return el('div', { class: 'lock-controls' }, [
     el('label', null, 'Lock rule for'),
-    minutes,
-    el('span', null, 'min'),
-    button,
+    amount,
+    unit,
+    durationButton,
+    el('span', { class: 'lock-or' }, 'or until'),
+    date,
+    dateButton,
   ]);
 }
 
@@ -276,14 +311,16 @@ function renderXProtection() {
   // The label tier cannot be turned off while it, or the classifier tier that
   // implies it, is enabled and locked.
   $xLabeled.disabled = labeledLocked || (model.enabled === true && modelLocked);
-  $xLabeledLockMinutes.disabled = labeledLocked;
-  $xLabeledLockButton.disabled = labeledLocked;
+  for (const control of [$xLabeledLockAmount, $xLabeledLockUnit, $xLabeledLockButton, $xLabeledLockDate, $xLabeledLockDateButton]) {
+    control.disabled = labeledLocked;
+  }
   $xLabeledStatus.textContent = labeledLocked ? lockText(labeled.lockUntil) : '';
 
   $xModel.checked = model.enabled === true;
   $xModel.disabled = modelLocked;
-  $xModelLockMinutes.disabled = modelLocked;
-  $xModelLockButton.disabled = modelLocked;
+  for (const control of [$xModelLockAmount, $xModelLockUnit, $xModelLockButton, $xModelLockDate, $xModelLockDateButton]) {
+    control.disabled = modelLocked;
+  }
   $xModelStatus.textContent = modelLocked ? lockText(model.lockUntil) : '';
 
   const sensitivity = sensitivityRank[model.sensitivity] != null ? model.sensitivity : 'balanced';
@@ -315,16 +352,18 @@ $xModel.addEventListener('change', () => {
   saveXProtection($xLabeled.checked || $xModel.checked, $xModel.checked);
 });
 
-async function lockXProtection(target, minutesInput) {
-  const durationSec = Math.round(Number(minutesInput.value) * 60);
+async function lockXProtection(target, durationSec) {
+  if (durationSec == null || durationSec < 60) return showSaveError('Choose a duration of at least one minute (dates must be in the future).');
   const response = await browser.runtime.sendMessage({ type: 'lockXProtection', target, durationSec });
   if (!response.ok) showSaveError(response.error);
   await refreshSnapshot();
   renderXProtection();
 }
 
-$xLabeledLockButton.addEventListener('click', () => lockXProtection('labeled', $xLabeledLockMinutes));
-$xModelLockButton.addEventListener('click', () => lockXProtection('model', $xModelLockMinutes));
+$xLabeledLockButton.addEventListener('click', () => lockXProtection('labeled', durationSecFrom($xLabeledLockAmount, $xLabeledLockUnit)));
+$xLabeledLockDateButton.addEventListener('click', () => lockXProtection('labeled', durationSecUntilDate($xLabeledLockDate)));
+$xModelLockButton.addEventListener('click', () => lockXProtection('model', durationSecFrom($xModelLockAmount, $xModelLockUnit)));
+$xModelLockDateButton.addEventListener('click', () => lockXProtection('model', durationSecUntilDate($xModelLockDate)));
 
 for (const radio of $xSensitivityRadios) {
   radio.addEventListener('change', () => {
