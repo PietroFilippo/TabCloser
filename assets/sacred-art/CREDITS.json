@@ -1,0 +1,2402 @@
+[
+  {
+    "slug": "annunciation",
+    "source": "Met",
+    "id": 459016,
+    "title": "The Annunciation",
+    "artist": "Botticelli (Alessandro di Mariano Filipepi)",
+    "size": 83995
+  },
+  {
+    "slug": "nativity",
+    "source": "Met",
+    "id": 459007,
+    "title": "The Nativity",
+    "artist": "Lorenzo Monaco (Piero di Giovanni)",
+    "size": 116702
+  },
+  {
+    "slug": "adoration-magi",
+    "source": "Met",
+    "id": 436504,
+    "title": "The Adoration of the Magi",
+    "artist": "Giotto di Bondone",
+    "size": 239941
+  },
+  {
+    "slug": "madonna-and-child",
+    "source": "Met",
+    "id": 459136,
+    "title": "Madonna and Child",
+    "artist": "Simone Martini",
+    "size": 189153
+  },
+  {
+    "slug": "crucifixion",
+    "source": "Met",
+    "id": 437007,
+    "title": "The Crucifixion",
+    "artist": "Fra Angelico (Guido di Pietro)",
+    "size": 210219
+  },
+  {
+    "slug": "resurrection",
+    "source": "Met",
+    "id": 437639,
+    "title": "Christ before Pilate; The Resurrection",
+    "artist": "Ludwig Schongauer",
+    "size": 83828
+  },
+  {
+    "slug": "last-supper",
+    "source": "Met",
+    "id": 459131,
+    "title": "The Last Supper",
+    "artist": "Ugolino da Siena (Ugolino di Nerio)",
+    "size": 112718
+  },
+  {
+    "slug": "saint-michael",
+    "source": "Met",
+    "id": 437729,
+    "title": "Saint Michael the Archangel",
+    "artist": "Ignacio de Ries",
+    "size": 106970
+  },
+  {
+    "slug": "assumption",
+    "source": "Met",
+    "id": 458998,
+    "title": "The Assumption of the Virgin",
+    "artist": "Bernardo Daddi",
+    "size": 156938
+  },
+  {
+    "slug": "saint-jerome",
+    "source": "Met",
+    "id": 459088,
+    "title": "Saint Jerome as Scholar",
+    "artist": "El Greco (Domenikos Theotokopoulos)",
+    "size": 84057
+  },
+  {
+    "slug": "holy-family",
+    "source": "Met",
+    "id": 437455,
+    "title": "The Holy Family with Saints Anne and Catherine of Alexandria",
+    "artist": "Jusepe de Ribera (called Lo Spagnoletto)",
+    "size": 72984
+  },
+  {
+    "slug": "agony-garden",
+    "source": "Met",
+    "id": 437371,
+    "title": "The Agony in the Garden",
+    "artist": "Raphael (Raffaello Sanzio or Santi)",
+    "size": 121236
+  },
+  {
+    "slug": "baptism-of-christ",
+    "source": "Met",
+    "id": 440393,
+    "title": "The Baptism of Christ",
+    "artist": "Jacopo Bassano (Jacopo da Ponte)",
+    "size": 56893
+  },
+  {
+    "slug": "transfiguration",
+    "source": "Met",
+    "id": 439327,
+    "title": "Christ Blessing",
+    "artist": "Gerard David",
+    "size": 138154
+  },
+  {
+    "slug": "ascension",
+    "source": "Met",
+    "id": 436835,
+    "title": "The Ascension of Christ",
+    "artist": "Hans SÃ¼ss von Kulmbach",
+    "size": 120077
+  },
+  {
+    "slug": "immaculate-conception",
+    "source": "Met",
+    "id": 437423,
+    "title": "The Immaculate Conception",
+    "artist": "Guido Reni",
+    "size": 78287
+  },
+  {
+    "slug": "pieta",
+    "source": "Met",
+    "id": 436053,
+    "title": "PietÃ ",
+    "artist": "Carlo Crivelli",
+    "size": 233306
+  },
+  {
+    "slug": "descent-from-cross",
+    "source": "Met",
+    "id": 436517,
+    "title": "Descent from the Cross",
+    "artist": "Girolamo da Cremona",
+    "size": 146782
+  },
+  {
+    "slug": "entombment",
+    "source": "Met",
+    "id": 631985,
+    "title": "The Entombment of Christ",
+    "artist": "Juan RodrÃ­guez JuÃ¡rez",
+    "size": 142813
+  },
+  {
+    "slug": "coronation-virgin",
+    "source": "Met",
+    "id": 458978,
+    "title": "Coronation of the Virgin",
+    "artist": "Giovanni di Paolo (Giovanni di Paolo di Grazia)",
+    "size": 140162
+  },
+  {
+    "slug": "visitation",
+    "source": "Met",
+    "id": 436244,
+    "title": "Virgin and Child with Saint Anne",
+    "artist": "Albrecht DÃ¼rer",
+    "size": 71399
+  },
+  {
+    "slug": "presentation-temple",
+    "source": "Met",
+    "id": 435828,
+    "title": "The Presentation in the Temple",
+    "artist": "Byzantine Painter",
+    "size": 184655
+  },
+  {
+    "slug": "flight-into-egypt",
+    "source": "Met",
+    "id": 437849,
+    "title": "The Flight into Egypt",
+    "artist": "CosmÃ¨ Tura (Cosimo di Domenico di Bonaventura)",
+    "size": 202984
+  },
+  {
+    "slug": "supper-at-emmaus",
+    "source": "Met",
+    "id": 437871,
+    "title": "The Supper at Emmaus",
+    "artist": "VelÃ¡zquez (Diego RodrÃ­guez de Silva y VelÃ¡zquez)",
+    "size": 63073
+  },
+  {
+    "slug": "christ-carrying-cross",
+    "source": "Met",
+    "id": 459087,
+    "title": "Christ Carrying the Cross",
+    "artist": "El Greco (Domenikos Theotokopoulos)",
+    "size": 58863
+  },
+  {
+    "slug": "lamentation",
+    "source": "Met",
+    "id": 459070,
+    "title": "The Lamentation of Christ",
+    "artist": "Simon Marmion",
+    "size": 171844
+  },
+  {
+    "slug": "saint-francis",
+    "source": "Met",
+    "id": 692597,
+    "title": "Saint Francis of Assisi",
+    "artist": "Antoniazzo Romano (Antonio di Benedetto Aquilio)",
+    "size": 62706
+  },
+  {
+    "slug": "saint-peter",
+    "source": "Met",
+    "id": 437986,
+    "title": "The Denial of Saint Peter",
+    "artist": "Caravaggio (Michelangelo Merisi)",
+    "size": 53507
+  },
+  {
+    "slug": "saint-anthony",
+    "source": "Met",
+    "id": 436982,
+    "title": "Saint Anthony of Padua",
+    "artist": "Maso di Banco",
+    "size": 133341
+  },
+  {
+    "slug": "ecce-homo",
+    "source": "Met",
+    "id": 436984,
+    "title": "The Adoration of the Magi",
+    "artist": "Quinten Massys",
+    "size": 166155
+  },
+  {
+    "slug": "good-shepherd",
+    "source": "Met",
+    "id": 436570,
+    "title": "The Adoration of the Shepherds",
+    "artist": "El Greco (Domenikos Theotokopoulos)",
+    "size": 68073
+  },
+  {
+    "slug": "saint-john-baptist",
+    "source": "Met",
+    "id": 438824,
+    "title": "Saint John the Baptist Preaching",
+    "artist": "Mattia Preti (Il Cavalier Calabrese)",
+    "size": 80950
+  },
+  {
+    "slug": "archangel-gabriel",
+    "source": "Met",
+    "id": 459062,
+    "title": "Archangel Gabriel; The Virgin Annunciate",
+    "artist": "Gerard David",
+    "size": 85208
+  },
+  {
+    "slug": "annunciation-458977",
+    "source": "Met",
+    "id": 458977,
+    "title": "The Annunciation to Zacharias; (verso) The Angel of the Annunciation",
+    "artist": "Giovanni di Paolo (Giovanni di Paolo di Grazia)",
+    "size": 128412
+  },
+  {
+    "slug": "annunciation-470304",
+    "source": "Met",
+    "id": 470304,
+    "title": "Annunciation Triptych (Merode Altarpiece)",
+    "artist": "Robert Campin",
+    "size": 198847
+  },
+  {
+    "slug": "annunciation-436680",
+    "source": "Met",
+    "id": 436680,
+    "title": "The Annunciation of the Death of the Virgin",
+    "artist": "Samuel van Hoogstraten",
+    "size": 47793
+  },
+  {
+    "slug": "annunciation-437063",
+    "source": "Met",
+    "id": 437063,
+    "title": "Madonna and Child with Saints and Angels",
+    "artist": "Lippo Memmi (Filippo di Memmo)",
+    "size": 70985
+  },
+  {
+    "slug": "annunciation-435898",
+    "source": "Met",
+    "id": 435898,
+    "title": "The Lamentation",
+    "artist": "Petrus Christus",
+    "size": 130204
+  },
+  {
+    "slug": "annunciation-459024",
+    "source": "Met",
+    "id": 459024,
+    "title": "The Madonna of Humility, the Annunciation, the Nativity, and the Pietà",
+    "artist": "Bartolomeo Vivarini",
+    "size": 156213
+  },
+  {
+    "slug": "annunciation-459061",
+    "source": "Met",
+    "id": 459061,
+    "title": "Christ Carrying the Cross, with the Crucifixion; The Resurrection, with the Pilgrims of Emmaus",
+    "artist": "Gerard David",
+    "size": 105033
+  },
+  {
+    "slug": "annunciation-436537",
+    "source": "Met",
+    "id": 436537,
+    "title": "Madonna and Child with the Annunciation and the Nativity",
+    "artist": "Goodhart Ducciesque Master",
+    "size": 199796
+  },
+  {
+    "slug": "nativity-christ-437744",
+    "source": "Met",
+    "id": 437744,
+    "title": "Saint Mary Magdalen Holding a Crucifix; (reverse) The Flagellation",
+    "artist": "Spinello Aretino (Spinello di Luca Spinelli)",
+    "size": 130374
+  },
+  {
+    "slug": "nativity-christ-436572",
+    "source": "Met",
+    "id": 436572,
+    "title": "Christ Healing the Blind",
+    "artist": "El Greco (Domenikos Theotokopoulos)",
+    "size": 190444
+  },
+  {
+    "slug": "nativity-christ-436099",
+    "source": "Met",
+    "id": 436099,
+    "title": "The Nativity with Donors and Saints Jerome and Leonard",
+    "artist": "Gerard David",
+    "size": 106402
+  },
+  {
+    "slug": "nativity-christ-437774",
+    "source": "Met",
+    "id": 437774,
+    "title": "Christ and the Twelve Apostles",
+    "artist": "Taddeo di Bartolo",
+    "size": 30005
+  },
+  {
+    "slug": "nativity-christ-435897",
+    "source": "Met",
+    "id": 435897,
+    "title": "Head of Christ (Ecce Homo)",
+    "artist": "Petrus Christus",
+    "size": 117590
+  },
+  {
+    "slug": "nativity-christ-437202",
+    "source": "Met",
+    "id": 437202,
+    "title": "Christ Bearing the Cross",
+    "artist": "North Netherlandish (Bruges) Painter",
+    "size": 196981
+  },
+  {
+    "slug": "nativity-christ-437489",
+    "source": "Met",
+    "id": 437489,
+    "title": "Christ Appearing to His Mother",
+    "artist": "Juan de Flandes",
+    "size": 116645
+  },
+  {
+    "slug": "nativity-christ-441672",
+    "source": "Met",
+    "id": 441672,
+    "title": "The Dormition of the Virgin; (reverse) Christ Carrying the Cross",
+    "artist": "Hans Schäufelein",
+    "size": 361246
+  },
+  {
+    "slug": "adoration-of-the-magi-472381",
+    "source": "Met",
+    "id": 472381,
+    "title": "The Virgin and Child in Majesty and the Adoration of the Magi",
+    "artist": "Master of Pedret",
+    "size": 131705
+  },
+  {
+    "slug": "adoration-of-the-magi-459076",
+    "source": "Met",
+    "id": 459076,
+    "title": "Adoration of the Magi",
+    "artist": "German",
+    "size": 349409
+  },
+  {
+    "slug": "adoration-of-the-magi-437611",
+    "source": "Met",
+    "id": 437611,
+    "title": "The Journey of the Magi",
+    "artist": "Sassetta (Stefano di Giovanni)",
+    "size": 123813
+  },
+  {
+    "slug": "adoration-of-the-magi-459057",
+    "source": "Met",
+    "id": 459057,
+    "title": "Saint Christopher and the Infant Christ",
+    "artist": "Dieric Bouts",
+    "size": 137149
+  },
+  {
+    "slug": "adoration-of-the-magi-437152",
+    "source": "Met",
+    "id": 437152,
+    "title": "Virgin and Child Enthroned with Scenes from the Life of the Virgin",
+    "artist": "Morata Master",
+    "size": 279969
+  },
+  {
+    "slug": "adoration-of-the-magi-437018",
+    "source": "Met",
+    "id": 437018,
+    "title": "Saints and Scenes from the Life of the Virgin",
+    "artist": "Master of Monte Oliveto",
+    "size": 80369
+  },
+  {
+    "slug": "adoration-of-the-magi-437969",
+    "source": "Met",
+    "id": 437969,
+    "title": "Battle between Christians and Muslims at El Sotillo",
+    "artist": "Francisco de Zurbarán",
+    "size": 80753
+  },
+  {
+    "slug": "adoration-of-the-magi-437497",
+    "source": "Met",
+    "id": 437497,
+    "title": "The Flagellation; (reverse) The Madonna of Mercy",
+    "artist": "Girolamo Romanino",
+    "size": 89451
+  },
+  {
+    "slug": "cma-annunciation-130980",
+    "source": "CMA",
+    "id": 130980,
+    "title": "The Annunciation and The Nativity",
+    "artist": "Jaume Ferrer the Younger (Spanish, Catalonia died c. 1460/70)",
+    "size": 347465
+  },
+  {
+    "slug": "cma-annunciation-515375",
+    "source": "CMA",
+    "id": 515375,
+    "title": "Triptych with The Lamentation of Christ (center), St. Barbara (left wing), St. Catherine of Alexandria (right wing), The Annunciation (reverse wings)",
+    "artist": "Master of the Krainburg Altar (Austrian, active c. 1485–1510)",
+    "size": 331385
+  },
+  {
+    "slug": "cma-nativity-97171",
+    "source": "CMA",
+    "id": 97171,
+    "title": "Adoration of the Shepherds",
+    "artist": "Hans Leonhard Schäufelein (German)",
+    "size": 602411
+  },
+  {
+    "slug": "cma-adoration-magi-120995",
+    "source": "CMA",
+    "id": 120995,
+    "title": "Triptych with the Adoration of the Magi ",
+    "artist": "",
+    "size": 906449
+  },
+  {
+    "slug": "cma-madonna-child-143768",
+    "source": "CMA",
+    "id": 143768,
+    "title": "Madonna and Child Enthroned",
+    "artist": "Master of San Lucchese (Italian, c. 1335–1380)",
+    "size": 335768
+  },
+  {
+    "slug": "cma-madonna-child-114684",
+    "source": "CMA",
+    "id": 114684,
+    "title": "Virgin and Child",
+    "artist": "Hans Memling (Netherlandish, 1494)",
+    "size": 515302
+  },
+  {
+    "slug": "cma-madonna-child-132367",
+    "source": "CMA",
+    "id": 132367,
+    "title": "Virgin and Child Enthroned",
+    "artist": "Battista di Biagio Sanguigni (Italian, active 1393–1451)",
+    "size": 108351
+  },
+  {
+    "slug": "cma-madonna-child-97166",
+    "source": "CMA",
+    "id": 97166,
+    "title": "Virgin and Child with Angels",
+    "artist": "Fra Filippo Lippi (Italian, c. 1406–1469)",
+    "size": 239260
+  },
+  {
+    "slug": "cma-madonna-child-142472",
+    "source": "CMA",
+    "id": 142472,
+    "title": "Virgin and Child with Saints",
+    "artist": "Berlinghiero (Italian, before 1242)",
+    "size": 93590
+  },
+  {
+    "slug": "cma-madonna-child-97178",
+    "source": "CMA",
+    "id": 97178,
+    "title": "Madonna and Child in a Niche",
+    "artist": "Antonio del Ceraiolo (Italian)",
+    "size": 389740
+  },
+  {
+    "slug": "cma-madonna-child-134237",
+    "source": "CMA",
+    "id": 134237,
+    "title": "Virgin and Child with Saint Jerome and Saint Catherine of Alexandria",
+    "artist": "Carolino da Viterbo (Italian)",
+    "size": 459947
+  },
+  {
+    "slug": "cma-madonna-child-122339",
+    "source": "CMA",
+    "id": 122339,
+    "title": "Virgin and Child with Saints and Donors",
+    "artist": "Giovanni Battista Cima da Conegliano (Italian, c. 1459–1518)",
+    "size": 732061
+  },
+  {
+    "slug": "cma-virgin-child-144966",
+    "source": "CMA",
+    "id": 144966,
+    "title": "Virgin and Child with the Young Saint John the Baptist",
+    "artist": "Sandro Botticelli (Italian, 1444/45–1510)",
+    "size": 330200
+  },
+  {
+    "slug": "cma-virgin-child-147016",
+    "source": "CMA",
+    "id": 147016,
+    "title": "Virgin and Child in a Landscape",
+    "artist": "Jan Gossaert (Flemish, c. 1475/78–1532)",
+    "size": 567422
+  },
+  {
+    "slug": "cma-virgin-child-150955",
+    "source": "CMA",
+    "id": 150955,
+    "title": "Saints Presenting a Devout Woman to the Virgin and Child",
+    "artist": "Giovanni Battista Pittoni (Italian, 1687–1767)",
+    "size": 439294
+  },
+  {
+    "slug": "cma-virgin-child-142293",
+    "source": "CMA",
+    "id": 142293,
+    "title": "The Virgin and Child Appearing to Saint Francis of Assisi",
+    "artist": "Luca Giordano (Italian, 1634–1705)",
+    "size": 409987
+  },
+  {
+    "slug": "cma-virgin-child-124803",
+    "source": "CMA",
+    "id": 124803,
+    "title": "Virgin and Child under a Canopy",
+    "artist": "",
+    "size": 398724
+  },
+  {
+    "slug": "cma-virgin-child-143761",
+    "source": "CMA",
+    "id": 143761,
+    "title": "The Virgin Crowned by Angels",
+    "artist": "Stefan Lochner (German, 1400-c. 1452)",
+    "size": 378659
+  },
+  {
+    "slug": "cma-virgin-child-149803",
+    "source": "CMA",
+    "id": 149803,
+    "title": "Virgin and Child with a Goldfinch",
+    "artist": "Neroccio de' Landi (Italian, 1447–1500)",
+    "size": 542719
+  },
+  {
+    "slug": "cma-virgin-child-106094",
+    "source": "CMA",
+    "id": 106094,
+    "title": "Virgin and Child Adored by Saints Mary Magdalene and Nicolas of Bari;  Christ Crucified with the Virgin and Saint John the Evangelist",
+    "artist": "Sano di Pietro (Italian, 1406–1481)",
+    "size": 370072
+  },
+  {
+    "slug": "cma-crucifixion-148758",
+    "source": "CMA",
+    "id": 148758,
+    "title": "The Crucifixion of Saint Andrew",
+    "artist": "Caravaggio (Italian, 1571–1610)",
+    "size": 212346
+  },
+  {
+    "slug": "cma-crucifixion-112856",
+    "source": "CMA",
+    "id": 112856,
+    "title": "The Crucifixion with a Carthusian Monk",
+    "artist": "Rogier van der Weyden (Flemish, c. 1399–1464)",
+    "size": 464630
+  },
+  {
+    "slug": "cma-crucifixion-97181",
+    "source": "CMA",
+    "id": 97181,
+    "title": "Preparation for the Crucifixion",
+    "artist": "",
+    "size": 520284
+  },
+  {
+    "slug": "cma-crucifixion-136864",
+    "source": "CMA",
+    "id": 136864,
+    "title": "Portable Triptych Icon: The Crucifixion",
+    "artist": "",
+    "size": 639908
+  },
+  {
+    "slug": "cma-crucifixion-142474",
+    "source": "CMA",
+    "id": 142474,
+    "title": "The Crucifixion of St. Andrew, with St. Francis and St. Paul below",
+    "artist": "Berlinghiero (Italian, before 1242)",
+    "size": 206124
+  },
+  {
+    "slug": "cma-crucifixion-136217",
+    "source": "CMA",
+    "id": 136217,
+    "title": "Christ and the Virgin in the House at Nazareth",
+    "artist": "Francisco de Zurbarán (Spanish, 1598–1664)",
+    "size": 168059
+  },
+  {
+    "slug": "cma-crucifixion-141220",
+    "source": "CMA",
+    "id": 141220,
+    "title": "Calvary with a Carthusian Monk",
+    "artist": "Jean de Beaumetz (French, c. 1335–1396)",
+    "size": 639617
+  },
+  {
+    "slug": "cma-crucifixion-130392",
+    "source": "CMA",
+    "id": 130392,
+    "title": "The Return of the Holy Family to Nazareth",
+    "artist": "Nicolas Poussin (French, 1594–1665)",
+    "size": 421721
+  },
+  {
+    "slug": "cma-resurrection-78982",
+    "source": "CMA",
+    "id": 78982,
+    "title": "The Resurrection of Christ",
+    "artist": "Johann König (German, 1586–1642)",
+    "size": 197604
+  },
+  {
+    "slug": "cma-resurrection-136863",
+    "source": "CMA",
+    "id": 136863,
+    "title": "Portable Triptych Icon: The Resurrection and Anastasis",
+    "artist": "",
+    "size": 725042
+  },
+  {
+    "slug": "cma-resurrection-128390",
+    "source": "CMA",
+    "id": 128390,
+    "title": "Saint John the Baptist",
+    "artist": "Dieric Bouts (Netherlandish, 1415–1475)",
+    "size": 354497
+  },
+  {
+    "slug": "cma-resurrection-159234",
+    "source": "CMA",
+    "id": 159234,
+    "title": "Crucifix with Scenes of the Passion",
+    "artist": "",
+    "size": 301546
+  },
+  {
+    "slug": "cma-resurrection-142476",
+    "source": "CMA",
+    "id": 142476,
+    "title": "John the Baptist",
+    "artist": "Robert Campin (Netherlandish, 1375/79–1444)",
+    "size": 528196
+  },
+  {
+    "slug": "cma-resurrection-136862",
+    "source": "CMA",
+    "id": 136862,
+    "title": "Portable Triptych Icon",
+    "artist": "",
+    "size": 551612
+  },
+  {
+    "slug": "cma-last-supper-128842",
+    "source": "CMA",
+    "id": 128842,
+    "title": "Saint Peter Repentant",
+    "artist": "Georges de La Tour (French, 1593–1652)",
+    "size": 408063
+  },
+  {
+    "slug": "cma-archangel-michael-140148",
+    "source": "CMA",
+    "id": 140148,
+    "title": "Pair of Panels from a Triptych: The Archangel Michael and St. Anthony Abbot",
+    "artist": "Fra Filippo Lippi (Italian, c. 1406–1469)",
+    "size": 293082
+  },
+  {
+    "slug": "cma-archangel-michael-140149",
+    "source": "CMA",
+    "id": 140149,
+    "title": "Panel from a Triptych: The Archangel Michael",
+    "artist": "Fra Filippo Lippi (Italian, c. 1406–1469)",
+    "size": 176990
+  },
+  {
+    "slug": "cma-assumption-virgin-115783",
+    "source": "CMA",
+    "id": 115783,
+    "title": "Death of the Virgin",
+    "artist": "Master of Heiligenkreuz (Austrian)",
+    "size": 544046
+  },
+  {
+    "slug": "cma-assumption-virgin-132647",
+    "source": "CMA",
+    "id": 132647,
+    "title": "Sketch for \"The Assumption of the Virgin\" (for St. James, Zbraslav, near Prague)?",
+    "artist": "Giovanni Battista Piazzetta (Italian, 1682–1754)",
+    "size": 306527
+  },
+  {
+    "slug": "cma-assumption-virgin-153773",
+    "source": "CMA",
+    "id": 153773,
+    "title": "Study for \"The Assumption of the Virgin\" for San Augustín, Seville",
+    "artist": "Juan de Valdés Leal (Spanish, 1622–1690)",
+    "size": 420301
+  },
+  {
+    "slug": "cma-saint-jerome-136680",
+    "source": "CMA",
+    "id": 136680,
+    "title": "Saint Jerome",
+    "artist": "Jusepe de Ribera (Spanish, 1591–1652)",
+    "size": 343259
+  },
+  {
+    "slug": "cma-saint-jerome-128375",
+    "source": "CMA",
+    "id": 128375,
+    "title": "The Vision of Saint Jerome",
+    "artist": "Giovanni Battista Langetti (Italian, 1635–1676)",
+    "size": 462211
+  },
+  {
+    "slug": "cma-saint-jerome-144588",
+    "source": "CMA",
+    "id": 144588,
+    "title": "Saint Ambrose",
+    "artist": "Francisco de Goya (Spanish, 1746–1828)",
+    "size": 65775
+  },
+  {
+    "slug": "cma-holy-family-150389",
+    "source": "CMA",
+    "id": 150389,
+    "title": "The Holy Family on the Steps",
+    "artist": "Nicolas Poussin (French, 1594–1665)",
+    "size": 693690
+  },
+  {
+    "slug": "cma-holy-family-108541",
+    "source": "CMA",
+    "id": 108541,
+    "title": "The Holy Family with Mary Magdalen",
+    "artist": "El Greco (Spanish, 1541–1614)",
+    "size": 495819
+  },
+  {
+    "slug": "cma-holy-family-113202",
+    "source": "CMA",
+    "id": 113202,
+    "title": "The Holy Family with Saint John the Baptist and Saint Margaret",
+    "artist": "Filippino Lippi (Italian, c. 1457–1504)",
+    "size": 346029
+  },
+  {
+    "slug": "cma-holy-family-122336",
+    "source": "CMA",
+    "id": 122336,
+    "title": "Saint Catherine",
+    "artist": "Master of the Holy Blood (Netherlandish)",
+    "size": 218325
+  },
+  {
+    "slug": "cma-holy-family-122337",
+    "source": "CMA",
+    "id": 122337,
+    "title": "Saint Barbara",
+    "artist": "Master of the Holy Blood (Netherlandish)",
+    "size": 197351
+  },
+  {
+    "slug": "cma-holy-family-122335",
+    "source": "CMA",
+    "id": 122335,
+    "title": "Saint Catherine and Saint Barbara (pair)",
+    "artist": "Master of the Holy Blood (Netherlandish)",
+    "size": 325663
+  },
+  {
+    "slug": "cma-holy-family-170814",
+    "source": "CMA",
+    "id": 170814,
+    "title": "The Holy Family",
+    "artist": "",
+    "size": 197467
+  },
+  {
+    "slug": "cma-holy-family-126768",
+    "source": "CMA",
+    "id": 126768,
+    "title": "Holy Family with a Shepherd",
+    "artist": "Battista Dossi (Italian, c. 1490–1548)",
+    "size": 542593
+  },
+  {
+    "slug": "cma-agony-garden-124118",
+    "source": "CMA",
+    "id": 124118,
+    "title": "Diptych with the Passion of Christ (right wing): Crowning with Thorns and Agony on the Garden ",
+    "artist": "",
+    "size": 334021
+  },
+  {
+    "slug": "cma-baptism-christ-127746",
+    "source": "CMA",
+    "id": 127746,
+    "title": "Baptism of Christ",
+    "artist": "Jacopo Tintoretto (Italian, 1518–1594)",
+    "size": 851759
+  },
+  {
+    "slug": "cma-pieta-94846",
+    "source": "CMA",
+    "id": 94846,
+    "title": "Pietà",
+    "artist": "",
+    "size": 428405
+  },
+  {
+    "slug": "cma-entombment-97170",
+    "source": "CMA",
+    "id": 97170,
+    "title": "The Dead Christ with Angels",
+    "artist": "Leandro Bassano (Italian, 1557–1623)",
+    "size": 507742
+  },
+  {
+    "slug": "cma-coronation-virgin-125248",
+    "source": "CMA",
+    "id": 125248,
+    "title": "The Coronation of the Virgin with the Trinity",
+    "artist": "Master of Rubielos de Mora (Spanish)",
+    "size": 441950
+  },
+  {
+    "slug": "cma-visitation-128075",
+    "source": "CMA",
+    "id": 128075,
+    "title": "The Visitation",
+    "artist": "",
+    "size": 415689
+  },
+  {
+    "slug": "cma-presentation-temple-139532",
+    "source": "CMA",
+    "id": 139532,
+    "title": "Study for \"The Presentation of Christ in the Temple\" (for Saint Ulrich, Vienna)",
+    "artist": "Franz Anton Maulbertsch (Austrian, 1724–1796)",
+    "size": 428024
+  },
+  {
+    "slug": "cma-presentation-temple-142384",
+    "source": "CMA",
+    "id": 142384,
+    "title": "Predella Panel from an Altarpiece: St. Catherine of Siena Invested with the Dominican Habit",
+    "artist": "Giovanni di Paolo (Italian, c. 1403–1482)",
+    "size": 560886
+  },
+  {
+    "slug": "cma-presentation-temple-142559",
+    "source": "CMA",
+    "id": 142559,
+    "title": "St. Catherine of Siena and the Beggar",
+    "artist": "Giovanni di Paolo (Italian, c. 1403–1482)",
+    "size": 110382
+  },
+  {
+    "slug": "cma-flight-egypt-137195",
+    "source": "CMA",
+    "id": 137195,
+    "title": "Rest on the Flight into Egypt",
+    "artist": "Claude Lorrain (French, 1604–1682)",
+    "size": 403261
+  },
+  {
+    "slug": "cma-carrying-cross-123024",
+    "source": "CMA",
+    "id": 123024,
+    "title": "Processional Cross",
+    "artist": "Master of Santa Chiara (Italian)",
+    "size": 111210
+  },
+  {
+    "slug": "cma-carrying-cross-144431",
+    "source": "CMA",
+    "id": 144431,
+    "title": "Peasants Crossing a Stream",
+    "artist": "Jan Siberechts (Flemish, 1627-c. 1703)",
+    "size": 70372
+  },
+  {
+    "slug": "cma-saint-francis-138444",
+    "source": "CMA",
+    "id": 138444,
+    "title": "St. Francis Kneeling before Christ on the Cross",
+    "artist": "Sassetta (Italian, 1392–1450)",
+    "size": 331486
+  },
+  {
+    "slug": "cma-saint-francis-97148",
+    "source": "CMA",
+    "id": 97148,
+    "title": "St. Francis of Assisi Receiving the Stigmata",
+    "artist": "Bicci di Lorenzo (Italian, 1373–1452)",
+    "size": 1018866
+  },
+  {
+    "slug": "cma-saint-francis-142475",
+    "source": "CMA",
+    "id": 142475,
+    "title": "Christ in a Mandorla, with the instruments of the Passion, with St. Stephen and St. Lawrence below",
+    "artist": "Berlinghiero (Italian, before 1242)",
+    "size": 202056
+  },
+  {
+    "slug": "cma-saint-peter-148861",
+    "source": "CMA",
+    "id": 148861,
+    "title": "The Colonnade of St. Peter's, Rome, during the Conclave",
+    "artist": "Hubert Robert (French, 1733–1808)",
+    "size": 332330
+  },
+  {
+    "slug": "cma-saint-peter-120997",
+    "source": "CMA",
+    "id": 120997,
+    "title": "St. Peter, St. Paul, St. George, and St. James the Greater",
+    "artist": "",
+    "size": 166187
+  },
+  {
+    "slug": "cma-saint-peter-148860",
+    "source": "CMA",
+    "id": 148860,
+    "title": "Pair of Paintings: The Colonnade of St. Peter's, Rome, during the Conclave and The Grotto of Posillipo",
+    "artist": "Hubert Robert (French, 1733–1808)",
+    "size": 201126
+  },
+  {
+    "slug": "cma-saint-peter-97145",
+    "source": "CMA",
+    "id": 97145,
+    "title": "Martyrdom of Saint Andrew",
+    "artist": "Guido Reni (Italian, 1575–1642)",
+    "size": 526864
+  },
+  {
+    "slug": "cma-saint-anthony-140150",
+    "source": "CMA",
+    "id": 140150,
+    "title": "Panel from a Triptych: St. Anthony Abbot",
+    "artist": "Fra Filippo Lippi (Italian, c. 1406–1469)",
+    "size": 153545
+  },
+  {
+    "slug": "cma-john-baptist-149768",
+    "source": "CMA",
+    "id": 149768,
+    "title": "Saint John the Baptist in a Landscape",
+    "artist": "Petrus Christus (Netherlandish, c. 1410–1475/76)",
+    "size": 65460
+  },
+  {
+    "slug": "cma-john-baptist-148301",
+    "source": "CMA",
+    "id": 148301,
+    "title": "The Birth and Naming of John the Baptist",
+    "artist": "Juan de Flandes (Netherlandish, c. 1460–1519)",
+    "size": 316300
+  },
+  {
+    "slug": "cma-john-baptist-130707",
+    "source": "CMA",
+    "id": 130707,
+    "title": "Head of Saint John the Baptist",
+    "artist": "",
+    "size": 728241
+  },
+  {
+    "slug": "cma-john-baptist-148366",
+    "source": "CMA",
+    "id": 148366,
+    "title": "Salome with the Head of Saint John the Baptist",
+    "artist": "Jacob Duck (Dutch, c. 1600–1667)",
+    "size": 402827
+  },
+  {
+    "slug": "cma-john-baptist-124090",
+    "source": "CMA",
+    "id": 124090,
+    "title": "John the Baptist being carried to Zacharias",
+    "artist": "Francesco Granacci (Italian, 1469–1543)",
+    "size": 305272
+  },
+  {
+    "slug": "cma-john-baptist-143261",
+    "source": "CMA",
+    "id": 143261,
+    "title": "Landscape with Saint John the Baptist",
+    "artist": "Herri met de Bles (Flemish, 1510–1572)",
+    "size": 905961
+  },
+  {
+    "slug": "cma-john-baptist-147696",
+    "source": "CMA",
+    "id": 147696,
+    "title": "Presentation Sketch for \"The Holy Family with Saints Anne, Joachim, and John the Baptist\" (for Santa Maria in Via Lata, Roma)",
+    "artist": "Francesco Trevisani (Italian, 1656–1746)",
+    "size": 277231
+  },
+  {
+    "slug": "cma-john-baptist-97154",
+    "source": "CMA",
+    "id": 97154,
+    "title": "Virgin and Child with John the Baptist and Angels",
+    "artist": "Pietro del Donzello (Italian, 1452–1509)",
+    "size": 472831
+  },
+  {
+    "slug": "cma-christ-blessing-95288",
+    "source": "CMA",
+    "id": 95288,
+    "title": "The Blessed Mother",
+    "artist": "George Hitchcock (American, 1850–1913)",
+    "size": 530692
+  },
+  {
+    "slug": "cma-saint-catherine-97191",
+    "source": "CMA",
+    "id": 97191,
+    "title": "Portrait of a Woman as Saint Catherine",
+    "artist": "Pier Francesco Foschi (Italian, 1502–1567)",
+    "size": 229119
+  },
+  {
+    "slug": "cma-saint-catherine-370119",
+    "source": "CMA",
+    "id": 370119,
+    "title": "Holy Family with the Mystic Marriage of Saint Catherine",
+    "artist": "Tommaso d’Antonio Manzuoli, called Maso da San Friano (Italian, 1531–1571)",
+    "size": 246807
+  },
+  {
+    "slug": "cma-mary-magdalene-153927",
+    "source": "CMA",
+    "id": 153927,
+    "title": "Saint Mary Magdalen",
+    "artist": "Simon Vouet (French, 1590–1649)",
+    "size": 366613
+  },
+  {
+    "slug": "cma-mary-magdalene-162322",
+    "source": "CMA",
+    "id": 162322,
+    "title": "Mater Dolorosa (The Virgin Mary Mourning)",
+    "artist": "Georges-Daniel de Monfreid (French, 1856–1929)",
+    "size": 449757
+  },
+  {
+    "slug": "cma-apostles-535124",
+    "source": "CMA",
+    "id": 535124,
+    "title": "Diptych with Twelve Apostles & St. Paul",
+    "artist": "Workshop or Circle of Wäldä Maryam (Ethiopia, active mid- to late 1600s-early 1700s)",
+    "size": 468801
+  },
+  {
+    "slug": "cma-apostles-111479",
+    "source": "CMA",
+    "id": 111479,
+    "title": "The Miracles of Saint James the Greater",
+    "artist": "Noël Nicolas Coypel (French, 1690–1734)",
+    "size": 407581
+  },
+  {
+    "slug": "cma-apostles-145148",
+    "source": "CMA",
+    "id": 145148,
+    "title": "The Betrayal of Christ",
+    "artist": "Jacob Jordaens (Flemish, 1593–1678)",
+    "size": 47208
+  },
+  {
+    "slug": "cma-altarpiece-128838",
+    "source": "CMA",
+    "id": 128838,
+    "title": "Altarpiece with The Passion of Christ",
+    "artist": "Master of the Schlägl Altarpiece (German)",
+    "size": 176638
+  },
+  {
+    "slug": "cma-altarpiece-139727",
+    "source": "CMA",
+    "id": 139727,
+    "title": "Madonna of Humility",
+    "artist": "Caterino Veneziano (Italian, active 1362–82)",
+    "size": 518638
+  },
+  {
+    "slug": "cma-altarpiece-137332",
+    "source": "CMA",
+    "id": 137332,
+    "title": "Pinnacle with Angel (pair)",
+    "artist": "Niccolò di Segna (Italian)",
+    "size": 287395
+  },
+  {
+    "slug": "cma-altarpiece-129220",
+    "source": "CMA",
+    "id": 129220,
+    "title": "The Mass of Saint Gregory",
+    "artist": "Hans Baldung (German, 1484/85–1545)",
+    "size": 1042864
+  },
+  {
+    "slug": "cma-altarpiece-159488",
+    "source": "CMA",
+    "id": 159488,
+    "title": "The Trinity",
+    "artist": "Hendrik van Balen (Flemish, 1575–1632)",
+    "size": 369972
+  },
+  {
+    "slug": "cma-altarpiece-137333",
+    "source": "CMA",
+    "id": 137333,
+    "title": "Pinnacle with Angel",
+    "artist": "Niccolò di Segna (Italian)",
+    "size": 474545
+  },
+  {
+    "slug": "cma-altarpiece-97152",
+    "source": "CMA",
+    "id": 97152,
+    "title": "Procession of the Magi",
+    "artist": "Bernardo Parentino (Italian)",
+    "size": 82381
+  },
+  {
+    "slug": "cma-altarpiece-130132",
+    "source": "CMA",
+    "id": 130132,
+    "title": "Christ with Joseph of Arimathea",
+    "artist": "Giovanni Girolamo Savoldo (Italian, c. 1480–after 1548)",
+    "size": 128405
+  },
+  {
+    "slug": "cma-saint-nicholas-129219",
+    "source": "CMA",
+    "id": 129219,
+    "title": "Saint Nicholas of Bari",
+    "artist": "Carlo Crivelli (Italian, 1430/35–1495)",
+    "size": 253910
+  },
+  {
+    "slug": "cma-trinity-283088",
+    "source": "CMA",
+    "id": 283088,
+    "title": "Icon of the New Testament Trinity",
+    "artist": "",
+    "size": 251423
+  },
+  {
+    "slug": "cma-christ-child-120998",
+    "source": "CMA",
+    "id": 120998,
+    "title": "St. Christopher, St. Erasmus, St. Barbara, and another female saint",
+    "artist": "",
+    "size": 285601
+  },
+  {
+    "slug": "annunciation-459257",
+    "source": "Met",
+    "id": 459257,
+    "title": "Saint Michael",
+    "artist": "Pietro di Giovanni d'Ambrogio",
+    "size": 129835
+  },
+  {
+    "slug": "nativity-christ-459058",
+    "source": "Met",
+    "id": 459058,
+    "title": "The Adoration of the Christ Child",
+    "artist": "Master of Frankfurt",
+    "size": 122658
+  },
+  {
+    "slug": "nativity-christ-437032",
+    "source": "Met",
+    "id": 437032,
+    "title": "Saint Paul with a Donor; Christ Appearing to His Mother",
+    "artist": "Master of the Saint Ursula Legend",
+    "size": 241381
+  },
+  {
+    "slug": "nativity-christ-435607",
+    "source": "Met",
+    "id": 435607,
+    "title": "Scenes from the Life of Christ",
+    "artist": "Giovanni Baronzio",
+    "size": 167066
+  },
+  {
+    "slug": "nativity-christ-436097",
+    "source": "Met",
+    "id": 436097,
+    "title": "Christ Taking Leave of His Mother",
+    "artist": "Gerard David",
+    "size": 203830
+  },
+  {
+    "slug": "nativity-christ-702752",
+    "source": "Met",
+    "id": 702752,
+    "title": "Christ and the Woman of Samaria",
+    "artist": "Benedetto Luti",
+    "size": 105499
+  },
+  {
+    "slug": "nativity-christ-437216",
+    "source": "Met",
+    "id": 437216,
+    "title": "The Fifteen Mysteries and the Virgin of the Rosary",
+    "artist": "Netherlandish (Brussels) Painter",
+    "size": 170142
+  },
+  {
+    "slug": "nativity-christ-471349",
+    "source": "Met",
+    "id": 471349,
+    "title": "The Nativity Polyptych",
+    "artist": "Rogier van der Weyden",
+    "size": 74893
+  },
+  {
+    "slug": "nativity-christ-436767",
+    "source": "Met",
+    "id": 436767,
+    "title": "The Life of Christ",
+    "artist": "Franceschino Zavattari",
+    "size": 127043
+  },
+  {
+    "slug": "madonna-and-child-436508",
+    "source": "Met",
+    "id": 436508,
+    "title": "Madonna and Child with Saints",
+    "artist": "Giovanni di Paolo (Giovanni di Paolo di Grazia)",
+    "size": 220270
+  },
+  {
+    "slug": "madonna-and-child-436506",
+    "source": "Met",
+    "id": 436506,
+    "title": "Madonna and Child with Donors",
+    "artist": "Giovanni da Milano",
+    "size": 94729
+  },
+  {
+    "slug": "madonna-and-child-436895",
+    "source": "Met",
+    "id": 436895,
+    "title": "Madonna and Child Enthroned with Two Angels",
+    "artist": "Fra Filippo Lippi",
+    "size": 93498
+  },
+  {
+    "slug": "madonna-and-child-435602",
+    "source": "Met",
+    "id": 435602,
+    "title": "Madonna and Child with Saints Philip and Agnes",
+    "artist": "Donato de' Bardi",
+    "size": 130196
+  },
+  {
+    "slug": "madonna-and-child-437372",
+    "source": "Met",
+    "id": 437372,
+    "title": "Madonna and Child Enthroned with Saints",
+    "artist": "Raphael (Raffaello Sanzio or Santi)",
+    "size": 157348
+  },
+  {
+    "slug": "madonna-and-child-437014",
+    "source": "Met",
+    "id": 437014,
+    "title": "Madonna and Child with the Donor, Pietro de' Lardi, Presented by Saint Nicholas",
+    "artist": "Master G.Z. (possibly Michele dai Carri, Italian, Ferrara, active by 1405–died 1441 Ferrara)",
+    "size": 163621
+  },
+  {
+    "slug": "madonna-and-child-437509",
+    "source": "Met",
+    "id": 437509,
+    "title": "Madonna and Child with Two Angels",
+    "artist": "Cosimo Rosselli",
+    "size": 140984
+  },
+  {
+    "slug": "madonna-and-child-437612",
+    "source": "Met",
+    "id": 437612,
+    "title": "Madonna and Child with Angels",
+    "artist": "Sassetta (Stefano di Giovanni)",
+    "size": 89676
+  },
+  {
+    "slug": "crucifixion-christ-435817",
+    "source": "Met",
+    "id": 435817,
+    "title": "The Crucifixion with the Virgin and Saint John",
+    "artist": "Hendrick ter Brugghen",
+    "size": 65279
+  },
+  {
+    "slug": "crucifixion-christ-436792",
+    "source": "Met",
+    "id": 436792,
+    "title": "The Crucifixion with Saints and a Donor",
+    "artist": "Joos van Cleve",
+    "size": 99184
+  },
+  {
+    "slug": "crucifixion-christ-459008",
+    "source": "Met",
+    "id": 459008,
+    "title": "The Crucified Christ between the Virgin and Saint John the Evangelist",
+    "artist": "Lorenzo Monaco (Piero di Giovanni)",
+    "size": 69759
+  },
+  {
+    "slug": "crucifixion-christ-438022",
+    "source": "Met",
+    "id": 438022,
+    "title": "Saint Catherine of Siena Exchanging Her Heart with Christ",
+    "artist": "Giovanni di Paolo (Giovanni di Paolo di Grazia)",
+    "size": 154090
+  },
+  {
+    "slug": "crucifixion-christ-437021",
+    "source": "Met",
+    "id": 437021,
+    "title": "Head of Christ",
+    "artist": "Master of the Orcagnesque Misericordia",
+    "size": 255864
+  },
+  {
+    "slug": "crucifixion-christ-436271",
+    "source": "Met",
+    "id": 436271,
+    "title": "The Crucifixion with Donors and Saints Peter and Margaret of Antioch",
+    "artist": "Cornelis Engebrechtsz",
+    "size": 112889
+  },
+  {
+    "slug": "crucifixion-christ-458973",
+    "source": "Met",
+    "id": 458973,
+    "title": "Saint Catherine of Siena Beseeching Christ to Resuscitate Her Mother",
+    "artist": "Giovanni di Paolo (Giovanni di Paolo di Grazia)",
+    "size": 189927
+  },
+  {
+    "slug": "resurrection-christ-437272",
+    "source": "Met",
+    "id": 437272,
+    "title": "The Resurrection",
+    "artist": "Perugino (Pietro di Cristoforo Vannucci)",
+    "size": 127817
+  },
+  {
+    "slug": "resurrection-christ-437569",
+    "source": "Met",
+    "id": 437569,
+    "title": "The Resurrection of Christ and the Harrowing of Hell",
+    "artist": "Russian Painter",
+    "size": 170626
+  },
+  {
+    "slug": "resurrection-christ-438338",
+    "source": "Met",
+    "id": 438338,
+    "title": "The Burial of Christ",
+    "artist": "Annibale Carracci",
+    "size": 71607
+  },
+  {
+    "slug": "resurrection-christ-436721",
+    "source": "Met",
+    "id": 436721,
+    "title": "Christ Crowned with Thorns (Ecce Homo), and the Mourning Virgin (Mater Dolorosa)",
+    "artist": "Adriaen Isenbrant",
+    "size": 120073
+  },
+  {
+    "slug": "resurrection-christ-459073",
+    "source": "Met",
+    "id": 459073,
+    "title": "Virgin and Child with a Dragonfly",
+    "artist": "Master of Saint Giles",
+    "size": 110661
+  },
+  {
+    "slug": "resurrection-christ-436412",
+    "source": "Met",
+    "id": 436412,
+    "title": "The Crucifixion, (reverse) Saint Francis of Assisi; The Resurrection, (reverse) An Abbot Saint, Possibly Saint Benedict",
+    "artist": "Northern French Painter",
+    "size": 94847
+  },
+  {
+    "slug": "last-supper-435759",
+    "source": "Met",
+    "id": 435759,
+    "title": "Head of Saint John the Baptist on a Charger",
+    "artist": "Aelbert Bouts",
+    "size": 119931
+  },
+  {
+    "slug": "last-supper-436176",
+    "source": "Met",
+    "id": 436176,
+    "title": "Christ Asleep during the Tempest",
+    "artist": "Eugène Delacroix",
+    "size": 103632
+  },
+  {
+    "slug": "last-supper-437004",
+    "source": "Met",
+    "id": 437004,
+    "title": "Saint Adalbert and Saint Procopius",
+    "artist": "Master of Eggenburg",
+    "size": 118382
+  },
+  {
+    "slug": "last-supper-437005",
+    "source": "Met",
+    "id": 437005,
+    "title": "The Burial of Saint Wenceslas",
+    "artist": "Master of Eggenburg",
+    "size": 111766
+  },
+  {
+    "slug": "last-supper-436576",
+    "source": "Met",
+    "id": 436576,
+    "title": "The Vision of Saint John",
+    "artist": "El Greco (Domenikos Theotokopoulos)",
+    "size": 147421
+  },
+  {
+    "slug": "last-supper-437630",
+    "source": "Met",
+    "id": 437630,
+    "title": "Saint Matthew and the Angel",
+    "artist": "Giovanni Gerolamo Savoldo",
+    "size": 82537
+  },
+  {
+    "slug": "last-supper-436573",
+    "source": "Met",
+    "id": 436573,
+    "title": "Cardinal Fernando Niño de Guevara (1541–1609)",
+    "artist": "El Greco (Domenikos Theotokopoulos)",
+    "size": 126704
+  },
+  {
+    "slug": "saint-michael-archangel-436802",
+    "source": "Met",
+    "id": 436802,
+    "title": "Saints Michael and Francis",
+    "artist": "Juan de Flandes",
+    "size": 196544
+  },
+  {
+    "slug": "saint-michael-archangel-436332",
+    "source": "Met",
+    "id": 436332,
+    "title": "Saint Roch",
+    "artist": "Francesco Francia",
+    "size": 143583
+  },
+  {
+    "slug": "saint-michael-archangel-437491",
+    "source": "Met",
+    "id": 437491,
+    "title": "Saint Michael; The Mass of Saint Gregory; Saint Jerome",
+    "artist": "Master of the Saint Catherine Legend",
+    "size": 189347
+  },
+  {
+    "slug": "saint-michael-archangel-458967",
+    "source": "Met",
+    "id": 458967,
+    "title": "Saint Anthony the Abbot in the Wilderness",
+    "artist": "Sano di Pietro (Ansano di Pietro di Mencio)",
+    "size": 93764
+  },
+  {
+    "slug": "saint-michael-archangel-436039",
+    "source": "Met",
+    "id": 436039,
+    "title": "The Martyrdom of Saint Barbara",
+    "artist": "Lucas Cranach the Elder",
+    "size": 336288
+  },
+  {
+    "slug": "saint-michael-archangel-437742",
+    "source": "Met",
+    "id": 437742,
+    "title": "Saint Michael and the Dragon",
+    "artist": "Spanish (Valencian) Painter(?)",
+    "size": 269852
+  },
+  {
+    "slug": "saint-michael-archangel-437803",
+    "source": "Met",
+    "id": 437803,
+    "title": "Saint Thecla Praying for the Plague-Stricken",
+    "artist": "Giovanni Battista Tiepolo",
+    "size": 82728
+  },
+  {
+    "slug": "saint-michael-archangel-436751",
+    "source": "Met",
+    "id": 436751,
+    "title": "Madonna and Child with Saints Michael and John the Baptist; The Noli Me Tangere; The Conversion of Saint Paul",
+    "artist": "Italian (Pisan) Painter",
+    "size": 123191
+  },
+  {
+    "slug": "assumption-virgin-437273",
+    "source": "Met",
+    "id": 437273,
+    "title": "Saint John the Baptist; Saint Lucy",
+    "artist": "Perugino (Pietro di Cristoforo Vannucci)",
+    "size": 57422
+  },
+  {
+    "slug": "assumption-virgin-436102",
+    "source": "Met",
+    "id": 436102,
+    "title": "Virgin and Child with Four Angels",
+    "artist": "Gerard David",
+    "size": 123259
+  },
+  {
+    "slug": "assumption-virgin-435853",
+    "source": "Met",
+    "id": 435853,
+    "title": "The Coronation of the Virgin",
+    "artist": "Annibale Carracci",
+    "size": 106956
+  },
+  {
+    "slug": "assumption-virgin-437673",
+    "source": "Met",
+    "id": 437673,
+    "title": "The Assumption of the Virgin with Saints Michael and Benedict",
+    "artist": "Luca Signorelli",
+    "size": 101786
+  },
+  {
+    "slug": "assumption-virgin-437054",
+    "source": "Met",
+    "id": 437054,
+    "title": "Virgin and Child with Saints Catherine of Alexandria and Barbara",
+    "artist": "Hans Memling",
+    "size": 177892
+  },
+  {
+    "slug": "assumption-virgin-436257",
+    "source": "Met",
+    "id": 436257,
+    "title": "Saint Rosalie Interceding for the Plague-stricken of Palermo",
+    "artist": "Anthony van Dyck",
+    "size": 109116
+  },
+  {
+    "slug": "assumption-virgin-437912",
+    "source": "Met",
+    "id": 437912,
+    "title": "The Death of the Virgin",
+    "artist": "Bartolomeo Vivarini",
+    "size": 132728
+  },
+  {
+    "slug": "assumption-virgin-436101",
+    "source": "Met",
+    "id": 436101,
+    "title": "The Rest on the Flight into Egypt",
+    "artist": "Gerard David",
+    "size": 119124
+  },
+  {
+    "slug": "saint-jerome-435728",
+    "source": "Met",
+    "id": 435728,
+    "title": "The Last Communion of Saint Jerome",
+    "artist": "Botticelli (Alessandro di Mariano Filipepi)",
+    "size": 149806
+  },
+  {
+    "slug": "saint-jerome-437261",
+    "source": "Met",
+    "id": 437261,
+    "title": "The Penitence of Saint Jerome",
+    "artist": "Joachim Patinir",
+    "size": 111536
+  },
+  {
+    "slug": "saint-jerome-459075",
+    "source": "Met",
+    "id": 459075,
+    "title": "Virgin and Child with a Donor Presented by Saint Jerome",
+    "artist": "Master of the Munich Bavarian Panels",
+    "size": 195969
+  },
+  {
+    "slug": "saint-jerome-437038",
+    "source": "Met",
+    "id": 437038,
+    "title": "Madonna and Child with Saints Jerome and Mary Magdalen",
+    "artist": "Matteo di Giovanni di Bartolo",
+    "size": 107776
+  },
+  {
+    "slug": "saint-jerome-437970",
+    "source": "Met",
+    "id": 437970,
+    "title": "Saint Benedict",
+    "artist": "Francisco de Zurbarán",
+    "size": 59151
+  },
+  {
+    "slug": "saint-jerome-459039",
+    "source": "Met",
+    "id": 459039,
+    "title": "Madonna and Child with Saints Francis and Jerome",
+    "artist": "Francesco Francia",
+    "size": 100139
+  },
+  {
+    "slug": "saint-jerome-463180",
+    "source": "Met",
+    "id": 463180,
+    "title": "Altar Shrine with Four Saints",
+    "artist": "Italian (Venetian) Painter",
+    "size": 238933
+  },
+  {
+    "slug": "saint-jerome-458972",
+    "source": "Met",
+    "id": 458972,
+    "title": "Madonna and Child with Saints Jerome and Agnes",
+    "artist": "Giovanni di Paolo (Giovanni di Paolo di Grazia)",
+    "size": 125897
+  },
+  {
+    "slug": "holy-family-437609",
+    "source": "Met",
+    "id": 437609,
+    "title": "The Holy Family with the Young Saint John the Baptist",
+    "artist": "Andrea del Sarto (Andrea d'Agnolo)",
+    "size": 66466
+  },
+  {
+    "slug": "holy-family-436798",
+    "source": "Met",
+    "id": 436798,
+    "title": "The Holy Family with Shepherds",
+    "artist": "Jacob Jordaens",
+    "size": 98130
+  },
+  {
+    "slug": "holy-family-441227",
+    "source": "Met",
+    "id": 441227,
+    "title": "The Holy Family with the Infant Saint John the Baptist",
+    "artist": "Perino del Vaga (Pietro Buonaccorsi)",
+    "size": 93520
+  },
+  {
+    "slug": "holy-family-437368",
+    "source": "Met",
+    "id": 437368,
+    "title": "Holy Family with an Angel",
+    "artist": "Raffaellino del Garbo (also known as Raffaelle de' Capponi and Raffaelle de' Carli)",
+    "size": 161015
+  },
+  {
+    "slug": "holy-family-436967",
+    "source": "Met",
+    "id": 436967,
+    "title": "The Holy Family with Saint Mary Magdalen",
+    "artist": "Andrea Mantegna",
+    "size": 93150
+  },
+  {
+    "slug": "holy-family-635395",
+    "source": "Met",
+    "id": 635395,
+    "title": "The Return of the Holy Family from Egypt",
+    "artist": "Nicolás Enríquez",
+    "size": 85051
+  },
+  {
+    "slug": "holy-family-438025",
+    "source": "Met",
+    "id": 438025,
+    "title": "The Holy Family with Saint John the Baptist",
+    "artist": "Nicolas Poussin",
+    "size": 106628
+  },
+  {
+    "slug": "holy-family-437528",
+    "source": "Met",
+    "id": 437528,
+    "title": "The Holy Family with Saints Francis and Anne and the Infant Saint John the Baptist",
+    "artist": "Peter Paul Rubens",
+    "size": 88971
+  },
+  {
+    "slug": "agony-in-the-garden-463377",
+    "source": "Met",
+    "id": 463377,
+    "title": "Altarpiece (retablo) with Scenes from the Passion",
+    "artist": "Master Morata",
+    "size": 114624
+  },
+  {
+    "slug": "agony-in-the-garden-441229",
+    "source": "Met",
+    "id": 441229,
+    "title": "Hagar and the Angel",
+    "artist": "Francesco Maffei",
+    "size": 71779
+  },
+  {
+    "slug": "agony-in-the-garden-435922",
+    "source": "Met",
+    "id": 435922,
+    "title": "Salisbury Cathedral from the Bishop's Grounds",
+    "artist": "John Constable",
+    "size": 284006
+  },
+  {
+    "slug": "baptism-of-christ-10439",
+    "source": "Met",
+    "id": 10439,
+    "title": "Baptism",
+    "artist": "William P. Chappel",
+    "size": 112775
+  },
+  {
+    "slug": "baptism-of-christ-479796",
+    "source": "Met",
+    "id": 479796,
+    "title": "Four Icons from a Pair of Doors (Panels), possibly part of a Polyptych: John the Theologian and Prochoros, the Baptism (Epiphany), Harrowing of Hell (Anastasis), and Saint Nicholas",
+    "artist": "",
+    "size": 110781
+  },
+  {
+    "slug": "baptism-of-christ-437157",
+    "source": "Met",
+    "id": 437157,
+    "title": "Christ in the Wilderness",
+    "artist": "Moretto da Brescia (Alessandro Bonvicino)",
+    "size": 113117
+  },
+  {
+    "slug": "baptism-of-christ-436990",
+    "source": "Met",
+    "id": 436990,
+    "title": "The Martyrdom of Saint Lawrence; (reverse) Giving Drink to the Thirsty",
+    "artist": "Master of the Acts of Mercy",
+    "size": 121438
+  },
+  {
+    "slug": "baptism-of-christ-436568",
+    "source": "Met",
+    "id": 436568,
+    "title": "Saint John the Baptist Bearing Witness",
+    "artist": "Francesco Granacci",
+    "size": 68291
+  },
+  {
+    "slug": "baptism-of-christ-436035",
+    "source": "Met",
+    "id": 436035,
+    "title": "Christ Blessing the Children",
+    "artist": "Lucas Cranach the Younger and Workshop",
+    "size": 94067
+  },
+  {
+    "slug": "baptism-of-christ-436034",
+    "source": "Met",
+    "id": 436034,
+    "title": "Christ and the Adulteress",
+    "artist": "Lucas Cranach the Younger and Workshop",
+    "size": 92711
+  },
+  {
+    "slug": "baptism-of-christ-435580",
+    "source": "Met",
+    "id": 435580,
+    "title": "Christ Crowned with Thorns",
+    "artist": "Antonello da Messina (Antonello di Giovanni d'Antonio)",
+    "size": 231980
+  },
+  {
+    "slug": "transfiguration-christ-831188",
+    "source": "Met",
+    "id": 831188,
+    "title": "Icon of the Virgin and Child, Hodegetria variant",
+    "artist": "Byzantine or Crusader",
+    "size": 231534
+  },
+  {
+    "slug": "transfiguration-christ-439117",
+    "source": "Met",
+    "id": 439117,
+    "title": "The Glorification of the Royal Hungarian Saints",
+    "artist": "Franz Anton Maulbertsch",
+    "size": 95913
+  },
+  {
+    "slug": "transfiguration-christ-435640",
+    "source": "Met",
+    "id": 435640,
+    "title": "Madonna Adoring the Sleeping Child",
+    "artist": "Giovanni Bellini",
+    "size": 86645
+  },
+  {
+    "slug": "ascension-christ-435572",
+    "source": "Met",
+    "id": 435572,
+    "title": "Saint Giles with Christ Triumphant over Satan and the Mission of the Apostles",
+    "artist": "Miguel Alcañiz (or Miquel Alcanyís)",
+    "size": 116770
+  },
+  {
+    "slug": "immaculate-conception-853450",
+    "source": "Met",
+    "id": 853450,
+    "title": "Nun’s Badge with the Virgin of the Immaculate Conception",
+    "artist": "Nicolás Rodríguez Juárez",
+    "size": 143810
+  },
+  {
+    "slug": "immaculate-conception-435600",
+    "source": "Met",
+    "id": 435600,
+    "title": "Saint John on Patmos",
+    "artist": "Hans Baldung (called Hans Baldung Grien)",
+    "size": 306838
+  },
+  {
+    "slug": "immaculate-conception-647338",
+    "source": "Met",
+    "id": 647338,
+    "title": "Saint Francis in Ecstasy",
+    "artist": "Giovanni Benedetto Castiglione (Il Grechetto)",
+    "size": 64385
+  },
+  {
+    "slug": "immaculate-conception-712946",
+    "source": "Met",
+    "id": 712946,
+    "title": "The Calling of Saint Matthew",
+    "artist": "Giovanni Battista Caracciolo",
+    "size": 62440
+  },
+  {
+    "slug": "immaculate-conception-764086",
+    "source": "Met",
+    "id": 764086,
+    "title": "Saint Bonaventure and Saint Anthony of Padua",
+    "artist": "Basilio Santa Cruz Pumacallao",
+    "size": 134901
+  },
+  {
+    "slug": "immaculate-conception-437971",
+    "source": "Met",
+    "id": 437971,
+    "title": "The Young Virgin",
+    "artist": "Francisco de Zurbarán",
+    "size": 97738
+  },
+  {
+    "slug": "immaculate-conception-437542",
+    "source": "Met",
+    "id": 437542,
+    "title": "Saint Teresa of Avila Interceding for Souls in Purgatory",
+    "artist": "Peter Paul Rubens",
+    "size": 112515
+  },
+  {
+    "slug": "immaculate-conception-436283",
+    "source": "Met",
+    "id": 436283,
+    "title": "Virgin and Child in a Niche",
+    "artist": "Jan van Eyck",
+    "size": 96442
+  },
+  {
+    "slug": "pieta-virgin-437733",
+    "source": "Met",
+    "id": 437733,
+    "title": "Virgin and Child with the Pietà and Saints",
+    "artist": "Spanish (Castilian) Painter",
+    "size": 169323
+  },
+  {
+    "slug": "pieta-virgin-437156",
+    "source": "Met",
+    "id": 437156,
+    "title": "The Entombment",
+    "artist": "Moretto da Brescia (Alessandro Bonvicino)",
+    "size": 117494
+  },
+  {
+    "slug": "pieta-virgin-437724",
+    "source": "Met",
+    "id": 437724,
+    "title": "Virgin and Child Enthroned with Saints Catherine and Jerome",
+    "artist": "Spanish Painter",
+    "size": 163288
+  },
+  {
+    "slug": "pieta-virgin-437652",
+    "source": "Met",
+    "id": 437652,
+    "title": "The Virgin Adoring the Child with the Infant Saint John the Baptist",
+    "artist": "Jacopo di Arcangelo (called Jacopo del Sellaio)",
+    "size": 114819
+  },
+  {
+    "slug": "pieta-virgin-436770",
+    "source": "Met",
+    "id": 436770,
+    "title": "Holy Family",
+    "artist": "Jacopino del Conte",
+    "size": 82608
+  },
+  {
+    "slug": "pieta-virgin-436337",
+    "source": "Met",
+    "id": 436337,
+    "title": "Portrait of a Monk in Prayer",
+    "artist": "French Painter",
+    "size": 49218
+  },
+  {
+    "slug": "pieta-virgin-435733",
+    "source": "Met",
+    "id": 435733,
+    "title": "Madonna and Child Enthroned with Saints and Angels",
+    "artist": "Francesco Botticini (Francesco di Giovanni)",
+    "size": 99467
+  },
+  {
+    "slug": "pieta-virgin-435992",
+    "source": "Met",
+    "id": 435992,
+    "title": "Saints Peter, Martha, Mary Magdalen, and Leonard",
+    "artist": "Correggio (Antonio Allegri)",
+    "size": 84632
+  },
+  {
+    "slug": "descent-from-the-cross-437008",
+    "source": "Met",
+    "id": 437008,
+    "title": "The Descent from the Cross",
+    "artist": "Master of the Holy Blood",
+    "size": 170070
+  },
+  {
+    "slug": "descent-from-the-cross-471722",
+    "source": "Met",
+    "id": 471722,
+    "title": "Scenes from the Life of Christ: Arrest of Christ, Christ in Limbo; Descent from the Cross, Preparation of Christ’s Body for His Entombment",
+    "artist": "",
+    "size": 285379
+  },
+  {
+    "slug": "descent-from-the-cross-435725",
+    "source": "Met",
+    "id": 435725,
+    "title": "Christ's Descent into Hell",
+    "artist": "Hieronymus Bosch",
+    "size": 57676
+  },
+  {
+    "slug": "entombment-christ-435838",
+    "source": "Met",
+    "id": 435838,
+    "title": "Virgin and Child in an Apse",
+    "artist": "Robert Campin",
+    "size": 115403
+  },
+  {
+    "slug": "coronation-of-the-virgin-436299",
+    "source": "Met",
+    "id": 436299,
+    "title": "The Coronation of the Virgin, and Saints",
+    "artist": "Giovanni di Tano Fei",
+    "size": 219883
+  },
+  {
+    "slug": "coronation-of-the-virgin-470328",
+    "source": "Met",
+    "id": 470328,
+    "title": "The Intercession of Christ and the Virgin",
+    "artist": "Lorenzo Monaco (Piero di Giovanni)",
+    "size": 80653
+  },
+  {
+    "slug": "coronation-of-the-virgin-459044",
+    "source": "Met",
+    "id": 459044,
+    "title": "Saints John the Evangelist and Mary Magdalene",
+    "artist": "Italian, Neapolitan Follower of Giotto",
+    "size": 168538
+  },
+  {
+    "slug": "coronation-of-the-virgin-438099",
+    "source": "Met",
+    "id": 438099,
+    "title": "The Public Viewing David's \"Coronation\" at the Louvre",
+    "artist": "Louis Léopold Boilly",
+    "size": 207458
+  },
+  {
+    "slug": "coronation-of-the-virgin-435848",
+    "source": "Met",
+    "id": 435848,
+    "title": "The Birth of the Virgin",
+    "artist": "Fra Carnevale (Bartolomeo di Giovanni Corradini)",
+    "size": 106984
+  },
+  {
+    "slug": "visitation-virgin-elizabeth-436723",
+    "source": "Met",
+    "id": 436723,
+    "title": "The Life of the Virgin",
+    "artist": "Adriaen Isenbrant",
+    "size": 96036
+  },
+  {
+    "slug": "visitation-virgin-elizabeth-470876",
+    "source": "Met",
+    "id": 470876,
+    "title": "The Visitation Panel from Saint John Retable",
+    "artist": "Domingo Ram",
+    "size": 494382
+  },
+  {
+    "slug": "visitation-virgin-elizabeth-437083",
+    "source": "Met",
+    "id": 437083,
+    "title": "The Marriage of the Virgin",
+    "artist": "Michelino da Besozzo (Michelino de Mulinari)",
+    "size": 95305
+  },
+  {
+    "slug": "presentation-in-the-temple-436513",
+    "source": "Met",
+    "id": 436513,
+    "title": "The Presentation of Christ in the Temple",
+    "artist": "Giovanni di Paolo (Giovanni di Paolo di Grazia)",
+    "size": 234347
+  },
+  {
+    "slug": "presentation-in-the-temple-437800",
+    "source": "Met",
+    "id": 437800,
+    "title": "The Investiture of Bishop Harold as Duke of Franconia",
+    "artist": "Giovanni Battista Tiepolo",
+    "size": 113824
+  },
+  {
+    "slug": "flight-into-egypt-436061",
+    "source": "Met",
+    "id": 436061,
+    "title": "Landscape with the Flight into Egypt",
+    "artist": "Aelbert Cuyp",
+    "size": 61803
+  },
+  {
+    "slug": "flight-into-egypt-435744",
+    "source": "Met",
+    "id": 435744,
+    "title": "Virgin and Child with the Young Saint John the Baptist and Angels",
+    "artist": "François Boucher",
+    "size": 84360
+  },
+  {
+    "slug": "flight-into-egypt-438169",
+    "source": "Met",
+    "id": 438169,
+    "title": "Salvator Mundi",
+    "artist": "Domenico Fetti",
+    "size": 92906
+  },
+  {
+    "slug": "flight-into-egypt-329982",
+    "source": "Met",
+    "id": 329982,
+    "title": "Painting of Holy Men",
+    "artist": "",
+    "size": 198998
+  },
+  {
+    "slug": "flight-into-egypt-436515",
+    "source": "Met",
+    "id": 436515,
+    "title": "Saints Matthew and Francis",
+    "artist": "Giovanni di Paolo (Giovanni di Paolo di Grazia)",
+    "size": 160288
+  },
+  {
+    "slug": "supper-at-emmaus-437592",
+    "source": "Met",
+    "id": 437592,
+    "title": "The Yard of the Inn at Emmaus",
+    "artist": "David Ryckaert III",
+    "size": 116973
+  },
+  {
+    "slug": "christ-carrying-the-cross-764095",
+    "source": "Met",
+    "id": 764095,
+    "title": "Christ Carrying the Cross, called \"The Lord of the Fall\"",
+    "artist": "Unknown",
+    "size": 229047
+  },
+  {
+    "slug": "christ-carrying-the-cross-437466",
+    "source": "Met",
+    "id": 437466,
+    "title": "Christ Blessing, Surrounded by a Donor Family",
+    "artist": "German Painter",
+    "size": 73228
+  },
+  {
+    "slug": "christ-carrying-the-cross-437020",
+    "source": "Met",
+    "id": 437020,
+    "title": "Crucifix",
+    "artist": "Master of the Orcagnesque Misericordia",
+    "size": 95802
+  },
+  {
+    "slug": "christ-carrying-the-cross-438688",
+    "source": "Met",
+    "id": 438688,
+    "title": "Saint Francis",
+    "artist": "Federico Barocci",
+    "size": 69604
+  },
+  {
+    "slug": "lamentation-christ-438385",
+    "source": "Met",
+    "id": 438385,
+    "title": "Saint John the Baptist; Saint Francis Receiving the Stigmata",
+    "artist": "Gerard David",
+    "size": 143194
+  },
+  {
+    "slug": "lamentation-christ-458960",
+    "source": "Met",
+    "id": 458960,
+    "title": "The Lamentation over the Dead Christ",
+    "artist": "Niccolò di Buonaccorso",
+    "size": 135936
+  },
+  {
+    "slug": "saint-francis-of-assisi-459046",
+    "source": "Met",
+    "id": 459046,
+    "title": "Saints Bartholomew and Simon",
+    "artist": "Master of Saint Francis",
+    "size": 117655
+  },
+  {
+    "slug": "saint-francis-of-assisi-436577",
+    "source": "Met",
+    "id": 436577,
+    "title": "Saint Andrew",
+    "artist": "El Greco (Domenikos Theotokopoulos)",
+    "size": 114157
+  },
+  {
+    "slug": "saint-francis-of-assisi-469892",
+    "source": "Met",
+    "id": 469892,
+    "title": "The Bishop of Assisi Giving a Palm to Saint Clare",
+    "artist": "",
+    "size": 130494
+  },
+  {
+    "slug": "saint-francis-of-assisi-436908",
+    "source": "Met",
+    "id": 436908,
+    "title": "Saint Catherine of Alexandria",
+    "artist": "Pietro Lorenzetti",
+    "size": 117388
+  },
+  {
+    "slug": "saint-francis-of-assisi-458953",
+    "source": "Met",
+    "id": 458953,
+    "title": "Saint Ansanus",
+    "artist": "Simone Martini",
+    "size": 187210
+  },
+  {
+    "slug": "saint-francis-of-assisi-435901",
+    "source": "Met",
+    "id": 435901,
+    "title": "Madonna and Child with Saints Francis and Clare",
+    "artist": "Cima da Conegliano (Giovanni Battista Cima)",
+    "size": 135330
+  },
+  {
+    "slug": "saint-francis-of-assisi-442749",
+    "source": "Met",
+    "id": 442749,
+    "title": "Saint Silvester Gozzolini",
+    "artist": "Segna di Buonaventura",
+    "size": 64002
+  },
+  {
+    "slug": "saint-francis-of-assisi-437243",
+    "source": "Met",
+    "id": 437243,
+    "title": "Saint Romuald",
+    "artist": "Pseudo-Palmeruccio",
+    "size": 114326
+  },
+  {
+    "slug": "saint-peter-apostle-436563",
+    "source": "Met",
+    "id": 436563,
+    "title": "Saint Peter and Simon Magus",
+    "artist": "Benozzo Gozzoli (Benozzo di Lese di Sandro)",
+    "size": 184916
+  },
+  {
+    "slug": "saint-peter-apostle-459026",
+    "source": "Met",
+    "id": 459026,
+    "title": "An Apostle",
+    "artist": "Carlo Crivelli",
+    "size": 123456
+  },
+  {
+    "slug": "saint-peter-apostle-471903",
+    "source": "Met",
+    "id": 471903,
+    "title": "Scenes from the Life of Saint Augustine of Hippo",
+    "artist": "Master of Saint Augustine",
+    "size": 171690
+  },
+  {
+    "slug": "saint-peter-apostle-458955",
+    "source": "Met",
+    "id": 458955,
+    "title": "Saint Peter",
+    "artist": "Lippo Memmi (Filippo di Memmo)",
+    "size": 213127
+  },
+  {
+    "slug": "saint-peter-apostle-441971",
+    "source": "Met",
+    "id": 441971,
+    "title": "The Tears of Saint Peter",
+    "artist": "Jusepe de Ribera (called Lo Spagnoletto)",
+    "size": 44549
+  },
+  {
+    "slug": "saint-peter-apostle-437330",
+    "source": "Met",
+    "id": 437330,
+    "title": "Saints Peter and John Healing the Lame Man",
+    "artist": "Nicolas Poussin",
+    "size": 64743
+  },
+  {
+    "slug": "saint-peter-apostle-437777",
+    "source": "Met",
+    "id": 437777,
+    "title": "Guardroom with the Deliverance of Saint Peter",
+    "artist": "David Teniers the Younger",
+    "size": 95709
+  },
+  {
+    "slug": "saint-peter-apostle-442491",
+    "source": "Met",
+    "id": 442491,
+    "title": "Saints Peter and Paul",
+    "artist": "Bartolomeo Manfredi",
+    "size": 69651
+  },
+  {
+    "slug": "saint-anthony-435846",
+    "source": "Met",
+    "id": 435846,
+    "title": "The Glorification of Saint Anthony Abbot",
+    "artist": "Carlo Innocenzo Carloni",
+    "size": 89518
+  },
+  {
+    "slug": "saint-anthony-436262",
+    "source": "Met",
+    "id": 436262,
+    "title": "Virgin and Child with Saint Catherine of Alexandria",
+    "artist": "Anthony van Dyck",
+    "size": 87407
+  },
+  {
+    "slug": "saint-anthony-435902",
+    "source": "Met",
+    "id": 435902,
+    "title": "Three Saints: Roch, Anthony Abbot, and Lucy",
+    "artist": "Cima da Conegliano (Giovanni Battista Cima)",
+    "size": 93677
+  }
+]
