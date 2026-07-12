@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TabCloser",
-  "version": "0.2.0",
-  "description": "Auto-close distracting sites after an active-time limit. Optional block period after close.",
+  "version": "0.3.0",
+  "description": "Limit distracting sites and locally protect against mature media on X/Twitter.",
   "browser_specific_settings": {
     "gecko": {
       "id": "tabcloser@personal.local",
@@ -29,6 +29,9 @@
   "host_permissions": [
     "<all_urls>"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -39,6 +42,10 @@
   "background": {
     "scripts": [
       "common.js",
+      "x-metadata.js",
+      "x-verdict.js",
+      "x-media-utils.js",
+      "classifier-runtime.js",
       "background.js"
     ]
   },
@@ -73,11 +80,17 @@
         "*://twitter.com/*",
         "*://*.twitter.com/*"
       ],
+      "css": [
+        "x-protection-v3.css"
+      ],
       "js": [
         "common.js",
-        "x-protection.js"
+        "x-metadata.js",
+        "x-verdict.js",
+        "x-media-utils.js",
+        "x-protection-v2.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ]
 }

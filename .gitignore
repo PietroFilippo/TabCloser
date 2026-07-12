@@ -1,2 +1,12 @@
 *.xpi
 *.zip
+node_modules/
+dist/
+artifacts/
+coverage/
+.model-corpus/
+.env
+.env.*
+classifier-runtime.js
+classifier-worker.js
+models/

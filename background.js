@@ -8,6 +8,7 @@ const state = {
 };
 
 let closeTimer = null;
+let bootPromise = null;
 
 // === Persistence ===
 async function loadState() {
@@ -276,32 +277,37 @@ function extractSensitiveMedia(payload) {
   return { urls: [...urls], tweetIds: [...tweetIds] };
 }
 
+// Only operations that can carry tweet/media payloads are worth parsing; misses
+// simply fall back to the fail-closed visual classifier.
+const xTweetOperationPattern = /Timeline|Tweet|Search|Bookmark|Media|Conversation|List|Detail|Likes|Explore/i;
+
 function observeXGraphqlResponse(details) {
   if (!state.xProtection.enabled || details.tabId < 0) return;
+  const operation = new URL(details.url).pathname.split('/').pop() || '';
+  if (!xTweetOperationPattern.test(operation)) return;
   console.debug('[DEBUG-xmeta-9b4c] observing X response', new URL(details.url).pathname);
   const filter = browser.webRequest.filterResponseData(details.requestId);
   const decoder = new TextDecoder();
-  const chunks = [];
   let response = '';
 
   filter.ondata = event => {
-    chunks.push(event.data);
+    // Pass bytes through immediately; the pending overlay already prevents a
+    // sensitive flash, so X must never wait on our parsing.
+    filter.write(event.data);
     response += decoder.decode(event.data, { stream: true });
   };
   filter.onstop = async () => {
+    filter.close();
     response += decoder.decode();
     try {
-      const metadata = extractSensitiveMedia(JSON.parse(response));
+      const metadata = TabCloserXMetadata.extractSensitiveMedia(JSON.parse(response));
       console.debug('[DEBUG-xmeta-9b4c] parsed X metadata', { urls: metadata.urls.length, tweetIds: metadata.tweetIds.length });
       if (metadata.urls.length || metadata.tweetIds.length) {
-        // Deliver labels before X receives the response, preventing a sensitive preview flash.
         await browser.tabs.sendMessage(details.tabId, { type: 'xSensitiveMediaMetadata', metadata });
       }
     } catch (error) {
       console.debug('[DEBUG-xmeta-9b4c] X response was not parsed or delivered', error?.message || 'unknown error');
     }
-    for (const chunk of chunks) filter.write(chunk);
-    filter.close();
   };
   filter.onerror = () => {
     // A failed stream is already disconnected by Firefox; calling disconnect again throws.
@@ -323,9 +329,149 @@ browser.webRequest.onBeforeRequest.addListener(
   ['blocking']
 );
 
+// === Local X / Twitter mature-media classification ===
+const xClassifierCache = new TabCloserXMediaUtils.LruCache(500);
+const xClassifierDiagnostics = { requests: 0, cacheHits: 0, safe: 0, protected: 0, errors: 0, timeouts: 0 };
+let xClassifierQueue = Promise.resolve();
+
+function isXPageUrl(value) {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === 'x.com' || host.endsWith('.x.com') || host === 'twitter.com' || host.endsWith('.twitter.com');
+  } catch {
+    return false;
+  }
+}
+
+function isApprovedXMediaUrl(value) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return url.protocol === 'https:' &&
+      (host === 'pbs.twimg.com' || host === 'video.twimg.com' || host === 'abs.twimg.com' || host.endsWith('.twimg.com'));
+  } catch {
+    return false;
+  }
+}
+
+function enqueueXClassification(work) {
+  const result = xClassifierQueue.then(work, work);
+  xClassifierQueue = result.catch(() => {});
+  return result;
+}
+
+function preferredXFetchUrl(value) {
+  // The model only sees 224px; never download the full-resolution variant.
+  try {
+    const url = new URL(value);
+    if (url.hostname === 'pbs.twimg.com' && /^(large|medium|orig|4096x4096)$/.test(url.searchParams.get('name') || '')) {
+      url.searchParams.set('name', 'small');
+    }
+    return url.href;
+  } catch {
+    return value;
+  }
+}
+
+async function fetchXMediaBlob(fetchUrl, cache, signal) {
+  const response = await fetch(fetchUrl, { cache, credentials: 'omit', redirect: 'follow', signal });
+  if (!response.ok || !isApprovedXMediaUrl(response.url)) throw new Error('media request rejected');
+  const type = response.headers.get('content-type') || '';
+  const declaredSize = Number(response.headers.get('content-length') || 0);
+  if (!type.toLowerCase().startsWith('image/')) throw new Error('unsupported media type');
+  if (declaredSize > 15 * 1024 * 1024) throw new Error('media is too large');
+  const blob = await response.blob();
+  if (blob.size > 15 * 1024 * 1024) throw new Error('media is too large');
+  return blob;
+}
+
+async function imageDataFromXUrl(value) {
+  if (!isApprovedXMediaUrl(value)) throw new Error('unapproved media URL');
+  const fetchUrl = preferredXFetchUrl(value);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    let bitmap;
+    try {
+      bitmap = await createImageBitmap(await fetchXMediaBlob(fetchUrl, 'force-cache', controller.signal));
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      // A stale or truncated cache entry decodes as "object no longer usable";
+      // retry once bypassing the HTTP cache before failing closed.
+      bitmap = await createImageBitmap(await fetchXMediaBlob(fetchUrl, 'reload', controller.signal));
+    }
+    try {
+      const size = TabCloserXVerdict.MODEL_INPUT_SIZE;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) throw new Error('canvas is unavailable');
+      context.drawImage(bitmap, 0, 0, size, size);
+      return context.getImageData(0, 0, size, size);
+    } finally {
+      bitmap.close();
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function imageDataFromFrameMessage(msg) {
+  const size = TabCloserXVerdict.MODEL_INPUT_SIZE;
+  if (msg.width !== size || msg.height !== size) throw new Error('invalid frame dimensions');
+  let pixels;
+  if (msg.pixels instanceof Uint8ClampedArray) pixels = msg.pixels;
+  else if (ArrayBuffer.isView(msg.pixels)) pixels = new Uint8ClampedArray(msg.pixels.buffer);
+  else if (msg.pixels instanceof ArrayBuffer) pixels = new Uint8ClampedArray(msg.pixels);
+  else throw new Error('invalid frame pixels');
+  if (pixels.length !== size * size * 4) throw new Error('invalid frame length');
+  return new ImageData(new Uint8ClampedArray(pixels), size, size);
+}
+
+async function classifyXMedia(msg, sender) {
+  if (!state.xProtection.enabled || !isXPageUrl(sender?.tab?.url || sender?.url || '')) {
+    return { verdict: 'protect', reason: 'invalid', modelVersion: TabCloserXVerdict.MODEL_VERSION };
+  }
+  const mediaKey = typeof msg.mediaKey === 'string' ? msg.mediaKey.slice(0, 2048) : '';
+  if (!mediaKey) return { verdict: 'protect', reason: 'invalid', modelVersion: TabCloserXVerdict.MODEL_VERSION };
+  const cacheKey = TabCloserXVerdict.MODEL_VERSION + '|' + mediaKey;
+  const cached = xClassifierCache.get(cacheKey);
+  if (cached) {
+    xClassifierDiagnostics.cacheHits += 1;
+    return cached;
+  }
+  xClassifierDiagnostics.requests += 1;
+  return enqueueXClassification(async () => {
+    try {
+      const imageData = msg.kind === 'url' ? await imageDataFromXUrl(msg.url) : imageDataFromFrameMessage(msg);
+      const classified = await Promise.race([
+        TabCloserClassifier.classifyImageData(imageData),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('classification timeout')), 10000)),
+      ]);
+      const result = { verdict: classified.verdict, reason: classified.reason, modelVersion: TabCloserXVerdict.MODEL_VERSION };
+      xClassifierCache.set(cacheKey, result);
+      if (result.verdict === 'safe') xClassifierDiagnostics.safe += 1;
+      else xClassifierDiagnostics.protected += 1;
+      return result;
+    } catch (error) {
+      const timedOut = /timeout|aborted/i.test(error?.message || error?.name || '');
+      if (timedOut) xClassifierDiagnostics.timeouts += 1;
+      else xClassifierDiagnostics.errors += 1;
+      console.warn('[TabCloser] X media classification failed; protecting media', {
+        kind: msg.kind,
+        mediaKey: mediaKey.slice(0, 160),
+        error: error?.message || String(error),
+      });
+      return { verdict: 'protect', reason: timedOut ? 'timeout' : 'error', modelVersion: TabCloserXVerdict.MODEL_VERSION };
+    }
+  });
+}
+
 // === Messages from popup / options ===
-browser.runtime.onMessage.addListener(async (msg) => {
+browser.runtime.onMessage.addListener(async (msg, sender) => {
   if (!msg?.type) return;
+  if (bootPromise) await bootPromise;
   switch (msg.type) {
     case 'getState': {
       // include in-flight focus seconds so UI reads live time
@@ -390,6 +536,7 @@ browser.runtime.onMessage.addListener(async (msg) => {
       const enabled = msg.enabled === true;
       if (isLockActive(state.xProtection.disableLockedUntil) && !enabled) return { ok: false, error: 'X protection is locked until ' + new Date(state.xProtection.disableLockedUntil).toLocaleString() + '.' };
       state.xProtection.enabled = enabled;
+      if (enabled) TabCloserClassifier.warmUp();
       await persist();
       await notifyXProtection();
       return { ok: true };
@@ -404,6 +551,14 @@ browser.runtime.onMessage.addListener(async (msg) => {
       await notifyXProtection();
       return { ok: true, until };
     }
+    case 'classifyXMedia':
+      return classifyXMedia(msg, sender);
+    case 'getXProtectionDiagnostics':
+      return {
+        ...xClassifierDiagnostics,
+        cacheSize: xClassifierCache.size,
+        modelVersion: TabCloserXVerdict.MODEL_VERSION,
+      };
     case 'unblock': {
       const key = normalizeRuleDomain(msg.domain);
       delete state.blocks[key];
@@ -422,8 +577,9 @@ browser.runtime.onMessage.addListener(async (msg) => {
 });
 
 // === Boot ===
-(async () => {
+bootPromise = (async () => {
   await loadState();
+  if (state.xProtection.enabled) TabCloserClassifier.warmUp();
   // Periodic safety commit (0.5 min = Firefox MV3 minimum for installed addons)
   browser.alarms.create('commit', { periodInMinutes: 0.5 });
   await handleFocusChange();

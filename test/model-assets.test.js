@@ -1,0 +1,22 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+// The repo root is loadable as a dev extension, so every asset the classifier
+// fetches at runtime must exist here — a missing model fails closed and
+// silently censors all media (verdict 'protect', reason 'error').
+const modelDir = path.join(__dirname, '..', 'models', 'mobilenet_v2_mid');
+
+test('classifier model assets exist in the loadable extension root', () => {
+  const modelJsonPath = path.join(modelDir, 'model.json');
+  assert.ok(fs.existsSync(modelJsonPath), 'models/mobilenet_v2_mid/model.json is missing — run `npm run build`');
+  const modelJson = JSON.parse(fs.readFileSync(modelJsonPath, 'utf8'));
+  const weightPaths = modelJson.weightsManifest.flatMap(group => group.paths);
+  assert.ok(weightPaths.length > 0, 'model.json declares no weight files');
+  for (const weightPath of weightPaths) {
+    const file = path.join(modelDir, weightPath);
+    assert.ok(fs.existsSync(file), 'missing model weights: ' + weightPath);
+    assert.ok(fs.statSync(file).size > 0, 'empty model weights: ' + weightPath);
+  }
+});

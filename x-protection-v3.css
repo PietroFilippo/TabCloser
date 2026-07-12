@@ -1,0 +1,57 @@
+html:not([data-tabcloser-x-protection="off"]) [data-testid="tweetPhoto"] img,
+html:not([data-tabcloser-x-protection="off"]) [data-testid="videoComponent"] video,
+html:not([data-tabcloser-x-protection="off"]) [data-testid="videoPlayer"] video,
+[data-tabcloser-media-state="pending"] img,
+[data-tabcloser-media-state="pending"] video,
+[data-tabcloser-media-state="protected"] img,
+[data-tabcloser-media-state="protected"] video {
+  visibility: hidden !important;
+}
+
+html[data-tabcloser-x-protection="on"] [data-tabcloser-media-state="safe"] img,
+html[data-tabcloser-x-protection="on"] [data-tabcloser-media-state="safe"] video,
+html[data-tabcloser-x-protection="off"] [data-testid] img,
+html[data-tabcloser-x-protection="off"] [data-testid] video {
+  visibility: visible !important;
+}
+
+[data-tabcloser-media-state="pending"],
+[data-tabcloser-media-state="protected"] {
+  min-height: 96px !important;
+  overflow: hidden !important;
+}
+
+/* The overlay is appended to the full clickable cell (photo/video link when
+   present, media root otherwise) so inset: 0 covers everything tappable. */
+.tabcloser-overlay-host {
+  min-height: 96px !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+
+.tabcloser-media-overlay {
+  align-items: center !important;
+  background: #202020 !important;
+  border: 1px solid #555 !important;
+  box-sizing: border-box !important;
+  color: #e6e6e6 !important;
+  display: flex !important;
+  font: 600 14px system-ui, sans-serif !important;
+  inset: 0 !important;
+  justify-content: center !important;
+  min-height: 96px !important;
+  padding: 20px !important;
+  position: absolute !important;
+  text-align: center !important;
+  z-index: 2147483646 !important;
+}
+
+.tabcloser-video-probe {
+  height: 1px !important;
+  left: -10000px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  position: fixed !important;
+  top: -10000px !important;
+  width: 1px !important;
+}

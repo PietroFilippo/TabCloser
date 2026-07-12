@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "samples": [
+    {
+      "id": "safe-001",
+      "file": "safe/001.jpg",
+      "expected": "safe",
+      "sha256": "replace-with-lowercase-sha256"
+    },
+    {
+      "id": "known-miss-001",
+      "file": "known-miss/001.jpg",
+      "expected": "known-miss",
+      "sha256": "replace-with-lowercase-sha256"
+    }
+  ]
+}
