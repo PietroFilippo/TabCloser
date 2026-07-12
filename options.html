@@ -21,6 +21,7 @@
       <p>Two tiers: hide media X itself labels as mature, or additionally run the on-device adult-content classifier on everything else (uncertain or failed checks stay hidden). Enabling the classifier tier enables and locks together with the label tier.</p>
 
       <label class="toggle"><input id="xLabeledEnabled" type="checkbox"> Hide media X labels as mature</label>
+      <span class="help-tip" tabindex="0" role="note" aria-label="About this mode" data-tip="Only hides media that X itself labels as sensitive (the poster's own flag or X's warning). Mature content the poster did not label is NOT censored. Nothing is analyzed on your device and unlabeled media is untouched.">?</span>
       <div class="lock-controls">
         <label for="xLabeledLockMinutes">Lock for</label>
         <input id="xLabeledLockMinutes" type="number" min="1" step="1" value="60">
@@ -30,6 +31,7 @@
       <p id="xLabeledStatus" class="lock-status"></p>
 
       <label class="toggle"><input id="xModelEnabled" type="checkbox"> Restrictive: also classify all media on-device</label>
+      <span class="help-tip" tabindex="0" role="note" aria-label="About this mode" data-tip="Accuracy is not 100%. The on-device classifier judges images by appearance, so it can censor harmless media (skin-heavy photos, paintings) and may occasionally miss mature media. It fails closed: anything it cannot verify stays blurred, and media shows briefly blurred while being checked. Uses some CPU/GPU while browsing X.">?</span>
       <div class="lock-controls">
         <label for="xModelLockMinutes">Lock for</label>
         <input id="xModelLockMinutes" type="number" min="1" step="1" value="60">
