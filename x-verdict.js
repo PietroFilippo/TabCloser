@@ -27,13 +27,25 @@
     return scores;
   }
 
-  function decidePredictions(predictions, threshold = ADULT_THRESHOLD) {
+  // User-selectable operating points along the precision/recall curve.
+  // 'balanced' mirrors the tuned defaults above.
+  const SENSITIVITY_PRESETS = {
+    lenient: { threshold: 0.3, sexyWeight: 0.35, hentaiSolo: 0.6 },
+    balanced: { threshold: ADULT_THRESHOLD, sexyWeight: SEXY_WEIGHT, hentaiSolo: HENTAI_SOLO_THRESHOLD },
+    strict: { threshold: 0.12, sexyWeight: 0.7, hentaiSolo: 0.4 },
+  };
+
+  function presetValues(name) {
+    return SENSITIVITY_PRESETS[name] || SENSITIVITY_PRESETS.balanced;
+  }
+
+  function decidePredictions(predictions, threshold = ADULT_THRESHOLD, sexyWeight = SEXY_WEIGHT, hentaiSolo = HENTAI_SOLO_THRESHOLD) {
     const scores = normalizeScores(predictions);
     if (Object.keys(scores).length !== EXPECTED_CLASSES.size) {
       return { verdict: 'protect', reason: 'invalid', adultScore: 1, scores };
     }
-    const hentaiSignal = scores.Hentai > scores.Drawing || scores.Hentai >= HENTAI_SOLO_THRESHOLD ? scores.Hentai : 0;
-    const adultScore = scores.Porn + hentaiSignal + SEXY_WEIGHT * scores.Sexy;
+    const hentaiSignal = scores.Hentai > scores.Drawing || scores.Hentai >= hentaiSolo ? scores.Hentai : 0;
+    const adultScore = scores.Porn + hentaiSignal + sexyWeight * scores.Sexy;
     return {
       verdict: adultScore >= threshold ? 'protect' : 'safe',
       reason: 'visual',
@@ -50,8 +62,10 @@
     HENTAI_SOLO_THRESHOLD,
     MODEL_NAME,
     MODEL_VERSION,
+    SENSITIVITY_PRESETS,
     SEXY_WEIGHT,
     decidePredictions,
     normalizeScores,
+    presetValues,
   };
 });

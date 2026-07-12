@@ -146,6 +146,16 @@ button.primary:hover { background: #3c7f3c; }
 .x-protection h2 { font-size: 16px; margin: 0 0 5px; }
 .x-protection p { color: #aaa; font-size: 13px; line-height: 1.45; }
 
+.sensitivity-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  color: #ddd;
+  margin: 8px 0 2px 24px;
+}
+.sensitivity-row input:disabled + * , .sensitivity-row label:has(input:disabled) { opacity: 0.5; cursor: default; }
+
 /* "?" markers whose note appears on hover or keyboard focus. */
 .help-tip {
   background: #2a2a2a;

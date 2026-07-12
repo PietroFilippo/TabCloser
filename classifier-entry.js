@@ -33,7 +33,7 @@ function getWorker() {
   return worker;
 }
 
-function classifyImageData(imageData) {
+function classifyImageData(imageData, sensitivity) {
   const target = getWorker();
   const id = ++nextId;
   return new Promise((resolve, reject) => {
@@ -41,6 +41,7 @@ function classifyImageData(imageData) {
     target.postMessage({
       type: 'classify',
       id,
+      sensitivity,
       modelUrl: modelUrl(),
       pixels: imageData.data.buffer,
       width: imageData.width,

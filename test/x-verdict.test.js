@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { ADULT_THRESHOLD, decidePredictions } = require('../x-verdict.js');
+const { ADULT_THRESHOLD, decidePredictions, presetValues } = require('../x-verdict.js');
 
 function predictions(values) {
   return Object.entries(values).map(([className, probability]) => ({ className, probability }));
@@ -32,6 +32,19 @@ test('does not over-restrict provocative-but-not-explicit content', () => {
   assert.equal(result.verdict, 'safe');
   const explicit = decidePredictions(predictions({ Drawing: 0.02, Hentai: 0.02, Neutral: 0.16, Porn: 0.2, Sexy: 0.6 }));
   assert.equal(explicit.verdict, 'protect');
+});
+
+test('sensitivity presets move the operating point in the promised direction', () => {
+  const borderline = predictions({ Drawing: 0.05, Hentai: 0.01, Neutral: 0.72, Porn: 0.1, Sexy: 0.12 });
+  const decide = name => {
+    const preset = presetValues(name);
+    return decidePredictions(borderline, preset.threshold, preset.sexyWeight, preset.hentaiSolo).verdict;
+  };
+  assert.equal(decide('lenient'), 'safe');
+  assert.equal(decide('balanced'), 'safe');
+  assert.equal(decide('strict'), 'protect');
+  assert.deepEqual(presetValues('nonsense'), presetValues('balanced'), 'unknown names fall back to balanced');
+  assert.equal(presetValues('balanced').threshold, ADULT_THRESHOLD);
 });
 
 test('fails closed when a model class is missing or invalid', () => {

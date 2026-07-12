@@ -6,6 +6,8 @@ const $xLabeledLockMinutes = document.getElementById('xLabeledLockMinutes');
 const $xLabeledLockButton = document.getElementById('lockXLabeled');
 const $xLabeledStatus = document.getElementById('xLabeledStatus');
 const $xModel = document.getElementById('xModelEnabled');
+const $xSensitivityRadios = [...document.querySelectorAll('input[name="xSensitivity"]')];
+const sensitivityRank = { lenient: 0, balanced: 1, strict: 2 };
 const $xModelLockMinutes = document.getElementById('xModelLockMinutes');
 const $xModelLockButton = document.getElementById('lockXModel');
 const $xModelStatus = document.getElementById('xModelStatus');
@@ -283,10 +285,20 @@ function renderXProtection() {
   $xModelLockMinutes.disabled = modelLocked;
   $xModelLockButton.disabled = modelLocked;
   $xModelStatus.textContent = modelLocked ? lockText(model.lockUntil) : '';
+
+  const sensitivity = sensitivityRank[model.sensitivity] != null ? model.sensitivity : 'balanced';
+  for (const radio of $xSensitivityRadios) {
+    radio.checked = radio.value === sensitivity;
+    // While locked, only tightening is allowed; also inert when the tier is off.
+    radio.disabled = model.enabled !== true ||
+      (modelLocked && sensitivityRank[radio.value] < sensitivityRank[sensitivity]);
+  }
 }
 
-async function saveXProtection(labeledEnabled, modelEnabled) {
-  const response = await browser.runtime.sendMessage({ type: 'saveXProtection', labeled: labeledEnabled, model: modelEnabled });
+async function saveXProtection(labeledEnabled, modelEnabled, sensitivity) {
+  const message = { type: 'saveXProtection', labeled: labeledEnabled, model: modelEnabled };
+  if (sensitivity) message.sensitivity = sensitivity;
+  const response = await browser.runtime.sendMessage(message);
   if (!response.ok) showSaveError(response.error);
   await refreshSnapshot();
   renderXProtection();
@@ -313,6 +325,12 @@ async function lockXProtection(target, minutesInput) {
 
 $xLabeledLockButton.addEventListener('click', () => lockXProtection('labeled', $xLabeledLockMinutes));
 $xModelLockButton.addEventListener('click', () => lockXProtection('model', $xModelLockMinutes));
+
+for (const radio of $xSensitivityRadios) {
+  radio.addEventListener('change', () => {
+    if (radio.checked) saveXProtection($xLabeled.checked, $xModel.checked, radio.value);
+  });
+}
 
 $add.addEventListener('click', () => {
   if (!workingRules) workingRules = [];

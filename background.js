@@ -7,7 +7,7 @@ const state = {
   // the on-device classifier. model implies labeled (enable and lock).
   xProtection: {
     labeled: { enabled: false, lockUntil: null },
-    model: { enabled: false, lockUntil: null },
+    model: { enabled: false, lockUntil: null, sensitivity: 'balanced' },
   },
   focus: { tabId: null, domain: null, enteredAt: null }, // not persisted
 };
@@ -37,9 +37,13 @@ async function loadState() {
     model: {
       enabled: raw.model?.enabled === true || legacyEnabled,
       lockUntil: finiteOrNull(raw.model?.lockUntil) ?? legacyLock,
+      sensitivity: SENSITIVITY_RANK[raw.model?.sensitivity] != null ? raw.model.sensitivity : 'balanced',
     },
   };
 }
+
+// Higher rank censors more; loosening is refused while the model tier is locked.
+const SENSITIVITY_RANK = { lenient: 0, balanced: 1, strict: 2 };
 
 async function persist() {
   await browser.storage.local.set({
@@ -454,7 +458,8 @@ async function classifyXMedia(msg, sender) {
   }
   const mediaKey = typeof msg.mediaKey === 'string' ? msg.mediaKey.slice(0, 2048) : '';
   if (!mediaKey) return { verdict: 'protect', reason: 'invalid', modelVersion: TabCloserXVerdict.MODEL_VERSION };
-  const cacheKey = TabCloserXVerdict.MODEL_VERSION + '|' + mediaKey;
+  const sensitivity = state.xProtection.model.sensitivity;
+  const cacheKey = TabCloserXVerdict.MODEL_VERSION + '|' + sensitivity + '|' + mediaKey;
   const cached = xClassifierCache.get(cacheKey);
   if (cached) {
     xClassifierDiagnostics.cacheHits += 1;
@@ -465,7 +470,7 @@ async function classifyXMedia(msg, sender) {
     try {
       const imageData = msg.kind === 'url' ? await imageDataFromXUrl(msg.url) : imageDataFromFrameMessage(msg);
       const classified = await Promise.race([
-        TabCloserClassifier.classifyImageData(imageData),
+        TabCloserClassifier.classifyImageData(imageData, sensitivity),
         new Promise((_, reject) => setTimeout(() => reject(new Error('classification timeout')), 10000)),
       ]);
       const result = { verdict: classified.verdict, reason: classified.reason, modelVersion: TabCloserXVerdict.MODEL_VERSION };
@@ -563,6 +568,14 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
       }
       if (current.model.enabled && !modelEnabled && isLockActive(current.model.lockUntil)) {
         return { ok: false, error: 'The classifier tier is locked until ' + new Date(current.model.lockUntil).toLocaleString() + '.' };
+      }
+      if (typeof msg.sensitivity === 'string') {
+        const nextRank = SENSITIVITY_RANK[msg.sensitivity];
+        if (nextRank == null) return { ok: false, error: 'Unknown sensitivity preset.' };
+        if (nextRank < SENSITIVITY_RANK[current.model.sensitivity] && isLockActive(current.model.lockUntil)) {
+          return { ok: false, error: 'Sensitivity cannot be lowered while the classifier tier is locked (until ' + new Date(current.model.lockUntil).toLocaleString() + ').' };
+        }
+        current.model.sensitivity = msg.sensitivity;
       }
       current.labeled.enabled = labeledEnabled;
       current.model.enabled = modelEnabled;

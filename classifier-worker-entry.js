@@ -51,7 +51,8 @@ self.onmessage = async event => {
     const pixels = new Uint8ClampedArray(message.pixels);
     const imageData = new ImageData(pixels, message.width, message.height);
     const predictions = await model.classify(imageData, 5);
-    const decision = verdictConfig.decidePredictions(predictions);
+    const preset = verdictConfig.presetValues(message.sensitivity);
+    const decision = verdictConfig.decidePredictions(predictions, preset.threshold, preset.sexyWeight, preset.hentaiSolo);
     self.postMessage({ type: 'result', id: message.id, ok: true, decision, backend: backendUsed });
   } catch (error) {
     self.postMessage({ type: 'result', id: message.id, ok: false, error: error?.message || 'classification failed' });

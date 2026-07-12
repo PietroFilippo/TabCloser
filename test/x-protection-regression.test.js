@@ -70,6 +70,15 @@ test('classifier and failure verdicts hide only their own cell; only X labels hi
   assert.doesNotMatch(coordinator, /protectGroup\(root, result\.reason/, 'classification results must route through protectUnsafeResult');
 });
 
+test('the sensitivity preset reaches the worker, keys the cache, and cannot loosen under lock', () => {
+  const background = readFileSync(path.join(root, 'background.js'), 'utf8');
+  const worker = readFileSync(path.join(root, 'classifier-worker-entry.js'), 'utf8');
+  assert.match(worker, /presetValues\(message\.sensitivity\)/);
+  assert.match(background, /MODEL_VERSION \+ '\|' \+ sensitivity \+ '\|' \+ mediaKey/, 'cached verdicts must be per-preset');
+  assert.match(background, /nextRank < SENSITIVITY_RANK\[current\.model\.sensitivity\] && isLockActive\(current\.model\.lockUntil\)/,
+    'lowering sensitivity while the model tier is locked must be refused');
+});
+
 test('an X sensitivity flag hard-blocks before any visual classification', () => {
   assert.match(coordinator, /function metadataProtects/);
   assert.match(coordinator, /if \(metadataProtects\(root\)\) \{\s*protectGroup\(root, 'metadata'\);\s*return;/);
