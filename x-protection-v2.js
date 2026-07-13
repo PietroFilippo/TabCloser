@@ -2,6 +2,7 @@
 // X itself marks mature; 'full' additionally runs the bundled local
 // classifier and keeps unmatched media hidden until it reports safe.
 let mode = 'off';
+let settings = { replaceText: false, blockLike: false };
 let operationId = 0;
 const sensitiveUrls = new Set();
 const sensitiveTweetIds = new Set();
@@ -131,15 +132,102 @@ function sacredArtUrlFor(root) {
   return browser.runtime.getURL('assets/sacred-art/' + pick);
 }
 
+// Clicking censored media opens our own viewer with the painting, never X's
+// photo modal (which would show the real media).
+let lightbox = null;
+
+function closeLightbox() {
+  lightbox?.remove();
+  lightbox = null;
+}
+
+function openLightbox(url) {
+  closeLightbox();
+  lightbox = document.createElement('div');
+  lightbox.className = 'tabcloser-lightbox';
+  const image = document.createElement('img');
+  image.src = url;
+  image.alt = 'Sacred art shown in place of hidden media';
+  lightbox.appendChild(image);
+  lightbox.addEventListener('click', closeLightbox);
+  document.documentElement.appendChild(lightbox);
+}
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && lightbox) {
+    event.stopImmediatePropagation();
+    closeLightbox();
+  }
+}, true);
+
+function quoteForKey(key) {
+  const quotes = globalThis.TabCloserQuotes || [];
+  if (!quotes.length) return null;
+  return quotes[hashString(key) % quotes.length];
+}
+
+// A quoted tweet is a nested card inside the same <article>; text replacement
+// must stay within the censored media's own layer (main tweet vs quoted card).
+function tweetLayerFor(node, article) {
+  let current = node;
+  while (current && current !== article) {
+    if (current instanceof Element && current.matches('div[role="link"]')) return current;
+    current = current.parentElement;
+  }
+  return article;
+}
+
+function applyQuoteFor(root) {
+  if (!settings.replaceText || !(root instanceof Element)) return;
+  const article = root.closest('article');
+  if (!article) return;
+  const layer = tweetLayerFor(root, article);
+  const text = [...article.querySelectorAll('[data-testid="tweetText"]')]
+    .find(candidate => tweetLayerFor(candidate, article) === layer);
+  if (!text || text.dataset.tabcloserQuoted === 'yes') return;
+  const quote = quoteForKey(statusIdFor(root) || text.textContent.slice(0, 40));
+  if (!quote) return;
+  text.dataset.tabcloserQuoted = 'yes';
+  text.classList.add('tabcloser-hidden-text');
+  const block = document.createElement('div');
+  block.className = 'tabcloser-quote';
+  block.textContent = '“' + quote.text + '”';
+  const author = document.createElement('div');
+  author.className = 'tabcloser-quote-author';
+  author.textContent = '— ' + quote.author;
+  block.appendChild(author);
+  text.insertAdjacentElement('afterend', block);
+}
+
+function restoreArticleText(article) {
+  if (!(article instanceof Element)) return;
+  const text = article.querySelector('[data-testid="tweetText"]');
+  if (text) {
+    delete text.dataset.tabcloserQuoted;
+    text.classList.remove('tabcloser-hidden-text');
+  }
+  article.querySelectorAll('.tabcloser-quote').forEach(quote => quote.remove());
+}
+
+function restoreAllArticleText() {
+  document.querySelectorAll('.tabcloser-quote').forEach(quote => quote.remove());
+  document.querySelectorAll('[data-tabcloser-quoted]').forEach(text => {
+    delete text.dataset.tabcloserQuoted;
+    text.classList.remove('tabcloser-hidden-text');
+  });
+}
+
 function setRootState(root, state, reason) {
   if (!root?.isConnected) return;
   root.dataset.tabcloserMediaState = state;
   root.dataset.tabcloserMediaReason = reason || '';
   const host = overlayHostFor(root);
   const existing = overlayFor(root);
+  const article = root.closest('article');
   if (state === 'safe') {
     existing?.remove();
     host.classList.remove('tabcloser-overlay-host');
+    if (article && !article.querySelector('[data-tabcloser-media-state="protected"]')) restoreArticleText(article);
     return;
   }
   host.classList.add('tabcloser-overlay-host');
@@ -169,6 +257,7 @@ function setRootState(root, state, reason) {
   }
   overlay.title = reason || '';
   if (!existing) host.appendChild(overlay);
+  if (state === 'protected' && mature) applyQuoteFor(root);
   root.querySelectorAll('video, audio').forEach(player => {
     player.pause();
     player.muted = true;
@@ -176,6 +265,8 @@ function setRootState(root, state, reason) {
 }
 
 function clearAllStates() {
+  closeLightbox();
+  restoreAllArticleText();
   document.querySelectorAll('.tabcloser-media-overlay').forEach(overlay => overlay.remove());
   document.querySelectorAll('.tabcloser-overlay-host').forEach(host => host.classList.remove('tabcloser-overlay-host'));
   document.querySelectorAll('[data-tabcloser-media-state]').forEach(root => {
@@ -404,6 +495,10 @@ function discoverRoot(root) {
   const domState = root.dataset.tabcloserMediaState;
   if (previous?.fingerprint === fingerprint && previous.status !== 'stale' && domState) {
     if (metadataProtects(root) && root.dataset.tabcloserMediaState !== 'protected') protectGroup(root, 'metadata');
+    // React may rebuild the text node without touching the media; re-apply
+    // the quote (idempotent) for confirmed-mature roots.
+    const reason = root.dataset.tabcloserMediaReason;
+    if (domState === 'protected' && (reason === 'visual' || reason === 'metadata')) applyQuoteFor(root);
     return;
   }
   const token = ++operationId;
@@ -430,6 +525,7 @@ function scanKnownRootsForMetadata() {
 function setProtection(config) {
   const modelEnabled = config?.model?.enabled === true;
   const labeledEnabled = modelEnabled || config?.labeled?.enabled === true || config?.enabled === true;
+  settings = { replaceText: config?.replaceText === true, blockLike: config?.blockLike === true };
   mode = modelEnabled ? 'full' : labeledEnabled ? 'labeled' : 'off';
   document.documentElement.dataset.tabcloserXProtection = mode;
   operationId += 1;
@@ -449,6 +545,16 @@ function addSensitiveMetadata(metadata) {
 
 function blockPendingOrProtectedActivation(event) {
   if (mode === 'off' || !(event.target instanceof Element)) return;
+  // Liking a censored post would endorse content the user never saw.
+  if (settings.blockLike) {
+    const likeButton = event.target.closest('[data-testid="like"]');
+    if (likeButton && likeButton.closest('article')?.querySelector('[data-tabcloser-media-state="protected"]')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      event.stopPropagation();
+      return;
+    }
+  }
   // .tabcloser-overlay-host guards the full clickable cell, which extends
   // beyond the media root that carries the state attribute.
   const root = event.target.closest('[data-tabcloser-media-state="pending"], [data-tabcloser-media-state="protected"], .tabcloser-overlay-host');
@@ -456,12 +562,36 @@ function blockPendingOrProtectedActivation(event) {
   event.preventDefault();
   event.stopImmediatePropagation();
   event.stopPropagation();
+  // A plain click on confirmed-censored media opens the painting large, as if
+  // the artwork were the post's own image.
+  if (event.type !== 'click' || event.button !== 0) return;
+  const stateRoot = root.matches('[data-tabcloser-media-state]')
+    ? root
+    : root.querySelector('[data-tabcloser-media-state="protected"]');
+  const reason = stateRoot?.dataset.tabcloserMediaReason;
+  if (stateRoot?.dataset.tabcloserMediaState === 'protected' && (reason === 'visual' || reason === 'metadata')) {
+    const url = sacredArtUrlFor(stateRoot);
+    if (url) openLightbox(url);
+  }
 }
 
 window.addEventListener('click', blockPendingOrProtectedActivation, true);
 window.addEventListener('auxclick', blockPendingOrProtectedActivation, true);
 document.addEventListener('keydown', event => {
   if (event.key === 'Enter' || event.key === ' ') blockPendingOrProtectedActivation(event);
+  // X's "L" hotkey likes the focused tweet; block it for censored posts, but
+  // never while the user is typing.
+  if (settings.blockLike && (event.key === 'l' || event.key === 'L') &&
+      !event.ctrlKey && !event.metaKey && !event.altKey) {
+    const active = document.activeElement;
+    if (active instanceof Element &&
+        !active.matches('input, textarea, [contenteditable="true"], [contenteditable=""], [role="textbox"]') &&
+        active.closest('article')?.querySelector('[data-tabcloser-media-state="protected"]')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      event.stopPropagation();
+    }
+  }
 }, true);
 document.addEventListener('play', event => {
   if (mode === 'off' || !(event.target instanceof HTMLMediaElement)) return;
