@@ -8,6 +8,16 @@ const path = require('node:path');
 // silently censors all media (verdict 'protect', reason 'error').
 const modelDir = path.join(__dirname, '..', 'models', 'mobilenet_v2_mid');
 
+test('sacred-art assets and the generated list exist in the loadable extension root', () => {
+  const artDir = path.join(__dirname, '..', 'assets', 'sacred-art');
+  const paintings = fs.readdirSync(artDir).filter(file => /\.(?:jpe?g|png|webp)$/i.test(file));
+  assert.ok(paintings.length > 0, 'assets/sacred-art has no images');
+  const listPath = path.join(__dirname, '..', 'sacred-art-list.js');
+  assert.ok(fs.existsSync(listPath), 'sacred-art-list.js is missing — run `npm run build`');
+  const listed = JSON.parse(fs.readFileSync(listPath, 'utf8').replace('globalThis.TabCloserSacredArt = ', '').replace(/;\s*$/, ''));
+  assert.deepEqual(listed.sort(), paintings.sort(), 'generated list must match the assets directory');
+});
+
 test('classifier model assets exist in the loadable extension root', () => {
   const modelJsonPath = path.join(modelDir, 'model.json');
   assert.ok(fs.existsSync(modelJsonPath), 'models/mobilenet_v2_mid/model.json is missing — run `npm run build`');

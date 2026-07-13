@@ -70,6 +70,17 @@
       "matches": [
         "<all_urls>"
       ]
+    },
+    {
+      "resources": [
+        "assets/sacred-art/*"
+      ],
+      "matches": [
+        "*://x.com/*",
+        "*://*.x.com/*",
+        "*://twitter.com/*",
+        "*://*.twitter.com/*"
+      ]
     }
   ],
   "content_scripts": [
@@ -88,6 +99,8 @@
         "x-metadata.js",
         "x-verdict.js",
         "x-media-utils.js",
+        "sacred-art-list.js",
+        "catholic-quotes.js",
         "x-protection-v2.js"
       ],
       "run_at": "document_start"

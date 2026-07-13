@@ -47,7 +47,9 @@
 
 .tabcloser-media-overlay {
   align-items: center !important;
-  background: rgba(12, 12, 12, 0.45) !important;
+  /* background-color, not the shorthand: the shorthand would reset the
+     inline background-image that carries the replacement painting. */
+  background-color: rgba(12, 12, 12, 0.45) !important;
   border: 1px solid rgba(85, 85, 85, 0.6) !important;
   box-sizing: border-box !important;
   color: #f2f2f2 !important;
@@ -65,8 +67,62 @@
 
 /* Pending overlay is only a click shield above the blurred preview. */
 .tabcloser-media-overlay-pending {
-  background: transparent !important;
+  background-color: transparent !important;
   border: none !important;
+}
+
+/* Protected media covered by a painting: fill the cell, tuck the notice into
+   the bottom-left corner so it does not obstruct the artwork. */
+.tabcloser-media-overlay-art {
+  align-items: flex-end !important;
+  background-color: #111 !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  justify-content: flex-start !important;
+  padding: 8px !important;
+}
+.tabcloser-media-overlay-art .tabcloser-overlay-label {
+  background: rgba(0, 0, 0, 0.55) !important;
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  padding: 3px 10px !important;
+}
+
+/* Full-screen viewer for the replacement painting. */
+.tabcloser-lightbox {
+  align-items: center !important;
+  background: rgba(0, 0, 0, 0.9) !important;
+  cursor: zoom-out !important;
+  display: flex !important;
+  inset: 0 !important;
+  justify-content: center !important;
+  position: fixed !important;
+  z-index: 2147483647 !important;
+}
+.tabcloser-lightbox img {
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.8) !important;
+  max-height: 92vh !important;
+  max-width: 92vw !important;
+  object-fit: contain !important;
+}
+
+/* Censored-post text replacement. */
+.tabcloser-hidden-text {
+  display: none !important;
+}
+.tabcloser-quote {
+  color: inherit !important;
+  font-style: italic !important;
+  line-height: 1.4 !important;
+  margin: 4px 0 !important;
+}
+.tabcloser-quote-author {
+  color: #8b98a5 !important;
+  font-size: 13px !important;
+  font-style: normal !important;
+  margin-top: 4px !important;
 }
 
 .tabcloser-video-probe {

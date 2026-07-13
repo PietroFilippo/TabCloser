@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
@@ -9,6 +9,7 @@ const dist = path.join(root, 'dist');
 const staticFiles = [
   'background.js',
   'blocked.css', 'blocked.html', 'blocked.js',
+  'catholic-quotes.js',
   'common.js',
   'manifest.json',
   'options.css', 'options.html', 'options.js',
@@ -33,6 +34,14 @@ await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 await Promise.all(staticFiles.map(file => cp(path.join(root, file), path.join(dist, file))));
 await cp(path.join(root, 'icons'), path.join(dist, 'icons'), { recursive: true });
+await cp(path.join(root, 'assets'), path.join(dist, 'assets'), { recursive: true });
+
+// The replacement-art list is generated from whatever is in assets/sacred-art
+// so adding or removing paintings never requires a code change.
+const artFiles = (await readdir(path.join(root, 'assets', 'sacred-art')))
+  .filter(file => /\.(?:jpe?g|png|webp)$/i.test(file))
+  .sort();
+await writeFile(path.join(dist, 'sacred-art-list.js'), 'globalThis.TabCloserSacredArt = ' + JSON.stringify(artFiles) + ';\n');
 
 await writeModelAssets();
 const bundleOptions = {
@@ -62,6 +71,7 @@ const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
 // generated runtime asset too.
 await cp(path.join(dist, 'classifier-runtime.js'), path.join(root, 'classifier-runtime.js'));
 await cp(path.join(dist, 'classifier-worker.js'), path.join(root, 'classifier-worker.js'));
+await cp(path.join(dist, 'sacred-art-list.js'), path.join(root, 'sacred-art-list.js'));
 await cp(path.join(dist, 'models'), path.join(root, 'models'), { recursive: true });
 await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 console.log('Built extension in ' + dist);

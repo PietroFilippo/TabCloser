@@ -10,6 +10,8 @@ const $xLabeledLockDateButton = document.getElementById('lockXLabeledDate');
 const $xLabeledStatus = document.getElementById('xLabeledStatus');
 const $xModel = document.getElementById('xModelEnabled');
 const $xSensitivityRadios = [...document.querySelectorAll('input[name="xSensitivity"]')];
+const $xReplaceText = document.getElementById('xReplaceText');
+const $xBlockLike = document.getElementById('xBlockLike');
 const sensitivityRank = { lenient: 0, balanced: 1, strict: 2 };
 const $xModelLockAmount = document.getElementById('xModelLockAmount');
 const $xModelLockUnit = document.getElementById('xModelLockUnit');
@@ -323,6 +325,9 @@ function renderXProtection() {
   }
   $xModelStatus.textContent = modelLocked ? lockText(model.lockUntil) : '';
 
+  $xReplaceText.checked = config.replaceText === true;
+  $xBlockLike.checked = config.blockLike === true;
+
   const sensitivity = sensitivityRank[model.sensitivity] != null ? model.sensitivity : 'balanced';
   for (const radio of $xSensitivityRadios) {
     radio.checked = radio.value === sensitivity;
@@ -333,7 +338,13 @@ function renderXProtection() {
 }
 
 async function saveXProtection(labeledEnabled, modelEnabled, sensitivity) {
-  const message = { type: 'saveXProtection', labeled: labeledEnabled, model: modelEnabled };
+  const message = {
+    type: 'saveXProtection',
+    labeled: labeledEnabled,
+    model: modelEnabled,
+    replaceText: $xReplaceText.checked,
+    blockLike: $xBlockLike.checked,
+  };
   if (sensitivity) message.sensitivity = sensitivity;
   const response = await browser.runtime.sendMessage(message);
   if (!response.ok) showSaveError(response.error);
@@ -370,6 +381,9 @@ for (const radio of $xSensitivityRadios) {
     if (radio.checked) saveXProtection($xLabeled.checked, $xModel.checked, radio.value);
   });
 }
+
+$xReplaceText.addEventListener('change', () => saveXProtection($xLabeled.checked, $xModel.checked));
+$xBlockLike.addEventListener('change', () => saveXProtection($xLabeled.checked, $xModel.checked));
 
 $add.addEventListener('click', () => {
   if (!workingRules) workingRules = [];

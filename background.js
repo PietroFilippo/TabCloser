@@ -8,6 +8,8 @@ const state = {
   xProtection: {
     labeled: { enabled: false, lockUntil: null },
     model: { enabled: false, lockUntil: null, sensitivity: 'balanced' },
+    replaceText: false, // swap censored post text for a Catholic quote
+    blockLike: false,   // prevent liking posts whose media is censored
   },
   focus: { tabId: null, domain: null, enteredAt: null }, // not persisted
 };
@@ -39,6 +41,8 @@ async function loadState() {
       lockUntil: finiteOrNull(raw.model?.lockUntil) ?? legacyLock,
       sensitivity: SENSITIVITY_RANK[raw.model?.sensitivity] != null ? raw.model.sensitivity : 'balanced',
     },
+    replaceText: raw.replaceText === true,
+    blockLike: raw.blockLike === true,
   };
 }
 
@@ -579,6 +583,8 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
       }
       current.labeled.enabled = labeledEnabled;
       current.model.enabled = modelEnabled;
+      if (typeof msg.replaceText === 'boolean') current.replaceText = msg.replaceText;
+      if (typeof msg.blockLike === 'boolean') current.blockLike = msg.blockLike;
       if (modelEnabled) TabCloserClassifier.warmUp();
       await persist();
       await notifyXProtection();

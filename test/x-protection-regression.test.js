@@ -64,6 +64,26 @@ test('protected media is covered by a deterministic sacred-art painting with a c
   assert.doesNotMatch(stylesheet, /\.tabcloser-media-overlay \{[^}]*background: rgba/);
 });
 
+test('clicking censored media opens the painting viewer instead of X\'s photo modal', () => {
+  const clickIndex = coordinator.indexOf('event.preventDefault');
+  const lightboxIndex = coordinator.indexOf('if (url) openLightbox(url);');
+  assert.ok(clickIndex >= 0 && lightboxIndex > clickIndex, 'the viewer must open only after X\'s activation is blocked');
+  assert.match(coordinator, /reason === 'visual' \|\| reason === 'metadata'/, 'the viewer opens only for confirmed mature verdicts');
+  assert.match(stylesheet, /\.tabcloser-lightbox \{[^}]*position: fixed !important/);
+});
+
+test('quote replacement and like blocking are opt-in and reversible', () => {
+  const background = readFileSync(path.join(root, 'background.js'), 'utf8');
+  const quotes = readFileSync(path.join(root, 'catholic-quotes.js'), 'utf8');
+  assert.match(background, /replaceText: raw\.replaceText === true/, 'toggles default off');
+  assert.match(background, /blockLike: raw\.blockLike === true/);
+  assert.match(coordinator, /settings\.replaceText/, 'quote swap must respect its toggle');
+  assert.match(coordinator, /settings\.blockLike/, 'like blocking must respect its toggle');
+  assert.match(coordinator, /restoreArticleText\(article\)/, 'released media must restore the original text');
+  assert.match(coordinator, /closest\('\[data-testid="like"\]'\)/, 'only the like button is blocked, not unlike');
+  assert.ok(JSON.stringify(quotes.match(/text:/g).length) > 10, 'quote collection present');
+});
+
 test('labeled mode hides only X-labelled media; full mode stays fail-closed', () => {
   const background = readFileSync(path.join(root, 'background.js'), 'utf8');
   assert.match(coordinator, /if \(mode === 'labeled'\) \{[\s\S]{0,220}metadataProtects\(root\)[\s\S]{0,80}return;/);
