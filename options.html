@@ -7,66 +7,86 @@
 </head>
 <body>
   <main>
-    <h1>TabCloser settings</h1>
-    <p class="subtitle">
-      Sites listed here close automatically after the chosen amount of <em>active</em>
-      tab time. Optionally, the site stays blocked for a chosen duration after the close.
-    </p>
+    <header class="page-header">
+      <h1>Tab<span>Closer</span></h1>
+      <p class="tagline">Time limits for distracting sites · sacred-art protection for X</p>
+    </header>
 
-    <div id="rules"></div>
-    <button id="addRule" class="primary">+ Add site</button>
+    <div class="layout">
+      <section class="panel panel-timers" aria-labelledby="rulesTitle">
+        <h2 id="rulesTitle"><span class="panel-icon">⏱</span> Site timers</h2>
+        <p class="panel-note">
+          Sites listed here close automatically after the chosen amount of <em>active</em>
+          tab time. Optionally, the site stays blocked for a chosen duration after the close.
+        </p>
+        <div id="rules"></div>
+        <button id="addRule" class="primary">+ Add site</button>
+      </section>
 
-    <section class="x-protection" aria-labelledby="xProtectionTitle">
-      <h2 id="xProtectionTitle">X / Twitter protection</h2>
-      <p>Two tiers: hide media X itself labels as mature, or additionally run the on-device adult-content classifier on everything else (uncertain or failed checks stay hidden). Enabling the classifier tier enables and locks together with the label tier.</p>
+      <section class="panel panel-x x-protection" aria-labelledby="xProtectionTitle">
+        <h2 id="xProtectionTitle"><span class="panel-icon">🛡</span> X / Twitter protection</h2>
+        <p class="panel-note">Two tiers: hide media X itself labels as mature, or additionally run the on-device adult-content classifier on everything else (uncertain or failed checks stay hidden). Enabling the classifier tier enables and locks together with the label tier.</p>
 
-      <label class="toggle"><input id="xLabeledEnabled" type="checkbox"> Hide media X labels as mature</label>
-      <span class="help-tip" tabindex="0" role="note" aria-label="About this mode" data-tip="Only hides media that X itself labels as sensitive (the poster's own flag or X's warning). Mature content the poster did not label is NOT censored. Nothing is analyzed on your device and unlabeled media is untouched.">?</span>
-      <div class="lock-controls">
-        <label for="xLabeledLockAmount">Lock for</label>
-        <input id="xLabeledLockAmount" type="number" min="1" step="1" value="60">
-        <select id="xLabeledLockUnit">
-          <option value="60">minutes</option>
-          <option value="3600">hours</option>
-          <option value="86400">days</option>
-        </select>
-        <button id="lockXLabeled" type="button">Lock</button>
-        <span class="lock-or">or until</span>
-        <input id="xLabeledLockDate" type="datetime-local">
-        <button id="lockXLabeledDate" type="button">Lock until date</button>
-      </div>
-      <p id="xLabeledStatus" class="lock-status"></p>
+        <div class="tier">
+          <h3>Tier 1 · X's own labels</h3>
+          <label class="toggle"><input id="xLabeledEnabled" type="checkbox"> Hide media X labels as mature</label>
+          <span class="help-tip" tabindex="0" role="note" aria-label="About this mode" data-tip="Only hides media that X itself labels as sensitive (the poster's own flag or X's warning). Mature content the poster did not label is NOT censored. Nothing is analyzed on your device and unlabeled media is untouched.">?</span>
+          <div class="lock-controls">
+            <label for="xLabeledLockAmount">Lock for</label>
+            <input id="xLabeledLockAmount" type="number" min="1" step="1" value="60">
+            <select id="xLabeledLockUnit">
+              <option value="60">minutes</option>
+              <option value="3600">hours</option>
+              <option value="86400">days</option>
+            </select>
+            <button id="lockXLabeled" type="button">Lock</button>
+            <span class="lock-or">or until</span>
+            <input id="xLabeledLockDate" type="datetime-local">
+            <button id="lockXLabeledDate" type="button">Lock until date</button>
+          </div>
+          <p id="xLabeledStatus" class="lock-status"></p>
+        </div>
 
-      <label class="toggle"><input id="xModelEnabled" type="checkbox"> Restrictive: also classify all media on-device</label>
-      <span class="help-tip" tabindex="0" role="note" aria-label="About this mode" data-tip="Accuracy is not 100%. The on-device classifier judges images by appearance, so it can censor harmless media (skin-heavy photos, paintings) and may occasionally miss mature media. It fails closed: anything it cannot verify stays blurred, and media shows briefly blurred while being checked. Uses some CPU/GPU while browsing X.">?</span>
-      <div class="sensitivity-row" role="radiogroup" aria-label="Classifier sensitivity">
-        <span>Sensitivity:</span>
-        <label class="toggle"><input type="radio" name="xSensitivity" value="lenient"> Lenient</label>
-        <label class="toggle"><input type="radio" name="xSensitivity" value="balanced"> Balanced</label>
-        <label class="toggle"><input type="radio" name="xSensitivity" value="strict"> Strict</label>
-        <span class="help-tip" tabindex="0" role="note" aria-label="About sensitivity" data-tip="How aggressive the classifier is. Strict censors more (fewer misses, more false alarms on harmless photos); Lenient censors less (fewer false alarms, more misses). While the classifier tier is locked, sensitivity can be raised but not lowered.">?</span>
-      </div>
-      <div class="lock-controls">
-        <label for="xModelLockAmount">Lock for</label>
-        <input id="xModelLockAmount" type="number" min="1" step="1" value="60">
-        <select id="xModelLockUnit">
-          <option value="60">minutes</option>
-          <option value="3600">hours</option>
-          <option value="86400">days</option>
-        </select>
-        <button id="lockXModel" type="button">Lock</button>
-        <span class="lock-or">or until</span>
-        <input id="xModelLockDate" type="datetime-local">
-        <button id="lockXModelDate" type="button">Lock until date</button>
-      </div>
-      <p id="xModelStatus" class="lock-status"></p>
+        <div class="tier">
+          <h3>Tier 2 · On-device classifier</h3>
+          <label class="toggle"><input id="xModelEnabled" type="checkbox"> Restrictive: also classify all media on-device</label>
+          <span class="help-tip" tabindex="0" role="note" aria-label="About this mode" data-tip="Accuracy is not 100%. The on-device classifier judges images by appearance, so it can censor harmless media (skin-heavy photos, paintings) and may occasionally miss mature media. It fails closed: anything it cannot verify stays blurred, and media shows briefly blurred while being checked. Uses some CPU/GPU while browsing X.">?</span>
+          <div class="sensitivity-row" id="xSensitivityRow">
+            <span>Sensitivity:</span>
+            <label><input type="radio" name="xSensitivity" value="lenient"> Lenient</label>
+            <label><input type="radio" name="xSensitivity" value="balanced"> Balanced</label>
+            <label><input type="radio" name="xSensitivity" value="strict"> Strict</label>
+            <span class="help-tip" tabindex="0" role="note" aria-label="About sensitivity" data-tip="Adjusts how aggressive the classifier is. Strict censors more (more false alarms, fewer misses); Lenient censors less. While the classifier tier is locked, sensitivity can be raised but not lowered.">?</span>
+          </div>
+          <div class="lock-controls">
+            <label for="xModelLockAmount">Lock for</label>
+            <input id="xModelLockAmount" type="number" min="1" step="1" value="60">
+            <select id="xModelLockUnit">
+              <option value="60">minutes</option>
+              <option value="3600">hours</option>
+              <option value="86400">days</option>
+            </select>
+            <button id="lockXModel" type="button">Lock</button>
+            <span class="lock-or">or until</span>
+            <input id="xModelLockDate" type="datetime-local">
+            <button id="lockXModelDate" type="button">Lock until date</button>
+          </div>
+          <p id="xModelStatus" class="lock-status"></p>
+        </div>
 
-      <label class="toggle"><input id="xReplaceText" type="checkbox"> Replace censored post text with Catholic quotes</label>
-      <span class="help-tip" tabindex="0" role="note" aria-label="About this option" data-tip="When a post's media is confirmed sensitive, the post text is swapped for a quotation from a Catholic saint or writer. The original text comes back if the media is released.">?</span>
-      <br>
-      <label class="toggle"><input id="xBlockLike" type="checkbox"> Prevent liking censored posts</label>
-      <span class="help-tip" tabindex="0" role="note" aria-label="About this option" data-tip="Blocks the Like button on posts whose media is hidden, so you never endorse content you have not actually seen (the painting is not the real post). Un-liking still works.">?</span>
-    </section>
+        <div class="tier">
+          <h3>Censored posts</h3>
+          <div class="option-row">
+            <label class="toggle"><input id="xReplaceText" type="checkbox"> Replace censored post text with Catholic quotes</label>
+            <span class="help-tip" tabindex="0" role="note" aria-label="About this option" data-tip="When a post's media is confirmed sensitive, the post text is swapped for a quotation from a Catholic saint or writer. The original text comes back if the media is released.">?</span>
+          </div>
+          <div class="option-row">
+            <label class="toggle"><input id="xBlockLike" type="checkbox"> Prevent liking censored posts</label>
+            <span class="help-tip" tabindex="0" role="note" aria-label="About this option" data-tip="Blocks the Like button (and the L shortcut) on posts whose media is hidden, so you never endorse content you have not actually seen (the painting is not the real post). Un-liking still works.">?</span>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <p id="saveStatus" class="save-status"></p>
   </main>

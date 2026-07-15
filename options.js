@@ -47,6 +47,28 @@ function clear(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
 
+// Inline two-click confirm: native confirm() is unreliable on extension option
+// pages (Firefox can return false even on OK), so the button asks for a second
+// click instead. Reverts after a few seconds if not confirmed.
+function armConfirm(button, confirmLabel, onConfirm) {
+  if (button.dataset.armed === 'yes') {
+    clearTimeout(Number(button.dataset.armTimer));
+    delete button.dataset.armed;
+    onConfirm();
+    return;
+  }
+  const original = button.textContent;
+  button.dataset.armed = 'yes';
+  button.classList.add('confirming');
+  button.textContent = confirmLabel;
+  const timer = setTimeout(() => {
+    delete button.dataset.armed;
+    button.classList.remove('confirming');
+    button.textContent = original;
+  }, 3500);
+  button.dataset.armTimer = String(timer);
+}
+
 function isLocked(until) {
   return Number.isFinite(until) && until > Date.now();
 }
@@ -136,13 +158,13 @@ function setStatus(statusEl, rule) {
     await refreshSnapshot();
     setStatus(statusEl, rule);
   });
-  statusEl.querySelector('[data-action="unblock"]')?.addEventListener('click', async () => {
-    if (!confirm('Unblock ' + normalizeRuleDomain(rule.domain) + ' now?')) return;
+  const unblockBtn = statusEl.querySelector('[data-action="unblock"]');
+  unblockBtn?.addEventListener('click', () => armConfirm(unblockBtn, 'Confirm unblock', async () => {
     const response = await browser.runtime.sendMessage({ type: 'unblock', domain: rule.domain });
     if (!response.ok) showSaveError(response.error);
     await refreshSnapshot();
     setStatus(statusEl, rule);
-  });
+  }));
 }
 
 function lockControls(rule, locked) {
@@ -184,10 +206,10 @@ function renderRule(rule) {
   const locked = isLocked(rule.disableLockedUntil);
   const div = el('div', { class: 'rule' + (rule.enabled ? '' : ' disabled') });
 
-  const domainInput = el('input', { type: 'text', placeholder: 'e.g. twitter.com' });
+  const domainInput = el('input', { type: 'text', placeholder: 'e.g. x.com' });
   domainInput.value = rule.domain;
   domainInput.disabled = locked;
-  const delBtn = el('button', { class: 'del', title: 'Delete rule', type: 'button' }, 'x');
+  const delBtn = el('button', { class: 'del', type: 'button', 'aria-label': 'Delete site' }, '×');
   delBtn.disabled = locked;
   div.appendChild(el('div', { class: 'rule-header' }, [domainInput, delBtn]));
 
@@ -262,11 +284,16 @@ function renderRule(rule) {
     scheduleSave();
   });
   delBtn.addEventListener('click', () => {
-    if (confirm('Delete rule for "' + (rule.domain || '(empty)') + '"?')) {
-      workingRules = workingRules.filter(item => item.id !== rule.id);
+    const index = workingRules.findIndex(item => item.id === rule.id);
+    if (index < 0) return;
+    const [removed] = workingRules.splice(index, 1);
+    render();
+    scheduleSave();
+    showUndoToast(removed.domain, () => {
+      workingRules.splice(Math.min(index, workingRules.length), 0, removed);
       render();
       scheduleSave();
-    }
+    });
   });
   return div;
 }
@@ -274,6 +301,24 @@ function renderRule(rule) {
 function showSaveError(message) {
   $save.textContent = message || 'Unable to save.';
   $save.style.color = '#f66';
+}
+
+let undoTimer = null;
+function showUndoToast(domain, onUndo) {
+  document.querySelector('.tabcloser-toast')?.remove();
+  clearTimeout(undoTimer);
+  const label = domain && domain.trim() ? domain : 'Site';
+  const toast = el('div', { class: 'tabcloser-toast' }, [
+    el('span', null, label + ' removed'),
+    el('button', { type: 'button' }, 'Undo'),
+  ]);
+  toast.querySelector('button').addEventListener('click', () => {
+    clearTimeout(undoTimer);
+    toast.remove();
+    onUndo();
+  });
+  document.body.appendChild(toast);
+  undoTimer = setTimeout(() => toast.remove(), 5000);
 }
 
 function scheduleSave() {
