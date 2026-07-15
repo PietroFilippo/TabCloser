@@ -312,7 +312,6 @@ function observeXGraphqlResponse(details) {
   if (!state.xProtection.labeled.enabled || details.tabId < 0) return;
   const operation = new URL(details.url).pathname.split('/').pop() || '';
   if (!xTweetOperationPattern.test(operation)) return;
-  console.debug('[DEBUG-xmeta-9b4c] observing X response', new URL(details.url).pathname);
   const filter = browser.webRequest.filterResponseData(details.requestId);
   const decoder = new TextDecoder();
   let response = '';
@@ -328,17 +327,13 @@ function observeXGraphqlResponse(details) {
     response += decoder.decode();
     try {
       const metadata = TabCloserXMetadata.extractSensitiveMedia(JSON.parse(response));
-      console.debug('[DEBUG-xmeta-9b4c] parsed X metadata', { urls: metadata.urls.length, tweetIds: metadata.tweetIds.length });
       if (metadata.urls.length || metadata.tweetIds.length) {
         await browser.tabs.sendMessage(details.tabId, { type: 'xSensitiveMediaMetadata', metadata });
       }
-    } catch (error) {
-      console.debug('[DEBUG-xmeta-9b4c] X response was not parsed or delivered', error?.message || 'unknown error');
-    }
+    } catch {}
   };
   filter.onerror = () => {
     // A failed stream is already disconnected by Firefox; calling disconnect again throws.
-    console.debug('[DEBUG-xmeta-9b4c] X response stream ended with an error');
   };
 }
 

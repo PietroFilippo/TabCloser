@@ -120,7 +120,6 @@ function replaceProtected(root) {
   const replacement = createReplacement(root);
   if (root.matches?.('img, video, audio')) root.replaceWith(replacement);
   else root.replaceChildren(replacement);
-  console.debug('[DEBUG-xmeta-9b4c] protected sensitive media');
 }
 
 function protectMedia() {
@@ -143,20 +142,6 @@ function protectMedia() {
   });
 }
 
-document.addEventListener('click', event => {
-  const target = event.target;
-  if (!(target instanceof Element)) return;
-  const candidate = target.closest('a[href*="/status/"], ' + mediaSelector);
-  if (!candidate) return;
-  const root = mediaRootFor(candidate);
-  const tweetId = statusIdFor(root);
-  console.debug('[DEBUG-xmeta-9b4c] media click evidence', {
-    tweetId: tweetId || 'none',
-    tweetMetadataMatched: !!tweetId && sensitiveTweetIds.has(tweetId),
-    urlMetadataMatched: mediaUrlIsSensitive(root),
-    protected: root.dataset?.tabcloserProtected === 'true',
-  });
-}, true);
 
 document.addEventListener('play', event => {
   const player = event.target;
@@ -170,7 +155,6 @@ function setProtection(config) {
 }
 
 function addSensitiveMetadata(metadata) {
-  console.debug('[DEBUG-xmeta-9b4c] received X metadata', { urls: metadata?.urls?.length || 0, tweetIds: metadata?.tweetIds?.length || 0 });
   for (const url of metadata?.urls || []) {
     const normalized = normalizeMediaUrl(url);
     if (normalized) sensitiveUrls.add(normalized);

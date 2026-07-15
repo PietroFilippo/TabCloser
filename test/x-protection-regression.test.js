@@ -8,10 +8,12 @@ const coordinator = readFileSync(path.join(root, 'x-protection-v2.js'), 'utf8');
 const stylesheet = readFileSync(path.join(root, 'x-protection-v3.css'), 'utf8');
 const classifier = readFileSync(path.join(root, 'classifier-entry.js'), 'utf8');
 
-test('candidate discovery excludes profile/card images and bare status-link descendants', () => {
+test('candidate discovery stays narrow while claiming native warning status tiles', () => {
   assert.doesNotMatch(coordinator, /card\.wrapper/);
   assert.doesNotMatch(coordinator, /a\[href\*="\/status\/"\] img/);
   assert.doesNotMatch(stylesheet, /card\.wrapper/);
+  assert.match(coordinator, /function nativeWarningRootFor/);
+  assert.match(coordinator, /warningPattern\.test\(link\.innerText/);
 });
 
 test('verdict roots override the fail-closed hiding rule', () => {
@@ -134,11 +136,11 @@ test('emoji, avatar, and hashflag images never become media roots or classifier 
   assert.match(coordinator, /filter\(image => !decorativeImage\(image\)\)/);
 });
 
-test('a blob-streamed video with a safe poster is released instead of failing closed', () => {
-  const posterRelease = coordinator.indexOf("posterVerifiedSafe ? { verdict: 'safe', reason: 'poster' }");
-  const invalidFallback = coordinator.indexOf("{ verdict: 'protect', reason: 'invalid' }");
-  assert.ok(posterRelease >= 0, 'safe poster must release an unsampleable video');
-  assert.ok(invalidFallback >= 0, 'posterless unsampleable video must stay protected');
+test('a blob-streamed video samples later frames and never trusts its poster alone', () => {
+  assert.doesNotMatch(coordinator, /reason: 'poster'/);
+  assert.doesNotMatch(coordinator, /posterVerifiedSafe/);
+  assert.match(coordinator, /classifyVideoFrames\(video, keyPrefix, source \|\| video\.poster \|\| 'inline'\)/);
+  assert.match(coordinator, /videoSampleTimes\(video\.duration\)/);
 });
 
 test('a responsive-image fingerprint change requeues instead of leaving media pending', () => {

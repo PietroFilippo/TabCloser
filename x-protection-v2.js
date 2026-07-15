@@ -11,6 +11,7 @@ const warningPattern = /(?:sensitive content|content warning|may contain sensiti
 const mediaSelector = '[data-testid="tweetPhoto"], [data-testid="videoComponent"], [data-testid="videoPlayer"]';
 const mediaElementSelector = 'img[src], video[poster], video[src], source[src]';
 const statusPathPattern = /\/status\/(\d+)(?:\/(?:photo|video)\/\d+)?/;
+const statusLinkSelector = 'a[href*="/status/"]';
 
 function waitForEvent(target, successEvent, errorEvent, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -40,19 +41,34 @@ function statusIdFromHref(href) {
 }
 
 function statusIdFor(node) {
-  const directLink = node.closest?.('a[href*="/status/"]');
+  const directLink = node.closest?.(statusLinkSelector);
   const directId = directLink ? statusIdFromHref(directLink.getAttribute('href') || '') : null;
   if (directId) return directId;
   const article = node.closest?.('article');
-  const articleLink = article?.querySelector('a[href*="/status/"]');
+  const articleLink = article?.querySelector(statusLinkSelector);
   return articleLink ? statusIdFromHref(articleLink.getAttribute('href') || '') : null;
+}
+
+// X's media-search grid can replace the entire preview with a native mature
+// content warning. Those tiles contain no img/video/data-testid media root, so
+// they need a deliberately narrow root: a real status link whose own rendered
+// text contains one of X's warning phrases. This avoids restoring the old
+// catch-all status/card discovery that classified avatars and emoji.
+function nativeWarningRootFor(node) {
+  if (!(node instanceof Element)) return null;
+  if (node.closest('.tabcloser-media-overlay, .tabcloser-lightbox')) return null;
+  const link = node.matches(statusLinkSelector) ? node : node.closest(statusLinkSelector);
+  if (!link || !statusIdFromHref(link.getAttribute('href') || '')) return null;
+  return warningPattern.test(link.innerText || '') ? link : null;
 }
 
 function mediaRootFor(node) {
   if (!(node instanceof Element)) return null;
+  const warningRoot = nativeWarningRootFor(node);
+  if (warningRoot) return warningRoot;
   const selected = node.closest(mediaSelector);
   if (selected) return selected;
-  const link = node.closest('a[href*="/status/"]');
+  const link = node.closest(statusLinkSelector);
   const href = link?.getAttribute('href') || '';
   if (/\/status\/\d+\/(?:photo|video)\/\d+/.test(href) && link.querySelector('img, video')) return link;
   // No generic parent fallback: it turned every emoji/avatar <img> in tweet
@@ -111,7 +127,7 @@ function overlayHostFor(root) {
   // X's clickable photo/video cell is usually an ancestor link that is taller
   // than the media root; the overlay must cover (and the blocker must guard)
   // that whole cell, not just the root.
-  return root.closest?.('a[href*="/status/"]') || root;
+  return root.closest?.(statusLinkSelector) || root;
 }
 
 function overlayFor(root) {
@@ -285,6 +301,8 @@ function candidateRootsWithin(container) {
   if (!(container instanceof Element || container instanceof Document)) return [];
   const roots = new Set();
   if (container instanceof Element) {
+    const warningRoot = nativeWarningRootFor(container);
+    if (warningRoot) roots.add(warningRoot);
     const direct = mediaRootFor(container);
     if (direct) roots.add(direct);
     if (container.matches(mediaSelector)) roots.add(container);
@@ -292,6 +310,9 @@ function candidateRootsWithin(container) {
   container.querySelectorAll?.(mediaSelector + ', a[href*="/status/"][href*="/photo/"] img, a[href*="/status/"][href*="/video/"] img, a[href*="/status/"][href*="/video/"] video').forEach(node => {
     const root = mediaRootFor(node);
     if (root) roots.add(root);
+  });
+  container.querySelectorAll?.(statusLinkSelector).forEach(link => {
+    if (nativeWarningRootFor(link)) roots.add(link);
   });
   return [...roots];
 }
@@ -346,21 +367,50 @@ async function seekVideo(video, time) {
   video.currentTime = time;
   await waitForEvent(video, 'seeked', 'error', 5000);
 }
+async function classifyVideoFrames(video, keyPrefix, source) {
+  if (video.readyState < 1) await waitForEvent(video, 'loadedmetadata', 'error', 8000);
+  const times = TabCloserXMediaUtils.videoSampleTimes(video.duration);
+  if (!times.length) return { verdict: 'protect', reason: 'invalid' };
+  const mediaKey = TabCloserXMetadata.normalizeMediaUrl(source) || source || 'inline';
+  for (const time of times) {
+    await seekVideo(video, time);
+    if (video.readyState < 2) await waitForEvent(video, 'loadeddata', 'error', 5000);
+    const imageData = pixelsFromDrawable(video);
+    const result = await browser.runtime.sendMessage({
+      type: 'classifyXMedia',
+      kind: 'frame',
+      mediaKey: keyPrefix + '|video|' + mediaKey + '|t=' + time,
+      pixels: imageData.data,
+      width: imageData.width,
+      height: imageData.height,
+    });
+    if (result.verdict !== 'safe') return result;
+  }
+  return { verdict: 'safe', reason: 'visual' };
+}
+
 
 async function classifyVideo(video, keyPrefix) {
-  let posterVerifiedSafe = false;
   if (video.poster) {
     const poster = await classifyUrl(video.poster, keyPrefix + '|poster|' + (TabCloserXMetadata.normalizeMediaUrl(video.poster) || video.poster));
     if (poster.verdict !== 'safe') return poster;
-    posterVerifiedSafe = true;
   }
 
   const source = video.currentSrc || video.src || video.querySelector('source[src]')?.src;
   if (!source || !approvedXMediaUrl(source)) {
-    // X streams timeline videos via MSE blob: URLs we cannot sample. The
-    // poster is generated from the video itself, so a safe poster releases it;
-    // X-labelled sensitive videos are still caught by the metadata path.
-    return posterVerifiedSafe ? { verdict: 'safe', reason: 'poster' } : { verdict: 'protect', reason: 'invalid' };
+    // X normally streams timeline videos through MSE blob URLs. A poster is
+    // only one frame and cannot establish that the rest of a video is safe,
+    // so sample the already-decoded page video and fail closed if that is not
+    // possible. Preserve its position because classification must not visibly
+    // seek the user's player after the overlay is removed.
+    const originalTime = Number.isFinite(video.currentTime) ? video.currentTime : null;
+    try {
+      return await classifyVideoFrames(video, keyPrefix, source || video.poster || 'inline');
+    } finally {
+      if (originalTime != null && video.isConnected) {
+        try { video.currentTime = originalTime; } catch {}
+      }
+    }
   }
   const probe = document.createElement('video');
   probe.className = 'tabcloser-video-probe';
@@ -370,24 +420,7 @@ async function classifyVideo(video, keyPrefix) {
   probe.src = source;
   document.documentElement.appendChild(probe);
   try {
-    if (probe.readyState < 1) await waitForEvent(probe, 'loadedmetadata', 'error', 8000);
-    const times = TabCloserXMediaUtils.videoSampleTimes(probe.duration);
-    if (!times.length) return { verdict: 'protect', reason: 'invalid' };
-    for (const time of times) {
-      await seekVideo(probe, time);
-      if (probe.readyState < 2) await waitForEvent(probe, 'loadeddata', 'error', 5000);
-      const imageData = pixelsFromDrawable(probe);
-      const result = await browser.runtime.sendMessage({
-        type: 'classifyXMedia',
-        kind: 'frame',
-        mediaKey: keyPrefix + '|video|' + (TabCloserXMetadata.normalizeMediaUrl(source) || source) + '|t=' + time,
-        pixels: imageData.data,
-        width: imageData.width,
-        height: imageData.height,
-      });
-      if (result.verdict !== 'safe') return result;
-    }
-    return { verdict: 'safe', reason: 'visual' };
+    return await classifyVideoFrames(probe, keyPrefix, source);
   } finally {
     probe.removeAttribute('src');
     probe.load();
