@@ -5,12 +5,30 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <h1>TabCloser</h1>
-  <h2>Tracked sites</h2>
-  <div id="active"></div>
-  <h2>Blocked</h2>
-  <div id="blocks"></div>
-  <button id="openOptions">Open settings</button>
+  <header class="popup-header">
+    <h1>Tab<span>Closer</span></h1>
+  </header>
+
+  <div class="scroll">
+    <section>
+      <h2><span class="dot dot-green"></span> Current site</h2>
+      <div id="current"></div>
+    </section>
+
+    <section>
+      <h2><span class="dot dot-green"></span> Tracked sites <span id="activeCount" class="count"></span></h2>
+      <div id="active"></div>
+      <div id="activeMore" class="more"></div>
+    </section>
+
+    <section>
+      <h2><span class="dot dot-amber"></span> Blocked <span id="blockCount" class="count"></span></h2>
+      <div id="blocks"></div>
+      <div id="blockMore" class="more"></div>
+    </section>
+  </div>
+
+  <button id="openOptions">⚙ Open settings</button>
   <script src="common.js"></script>
   <script src="popup.js"></script>
 </body>
