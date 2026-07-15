@@ -19,6 +19,7 @@
   },
   "permissions": [
     "tabs",
+    "scripting",
     "storage",
     "alarms",
     "webNavigation",

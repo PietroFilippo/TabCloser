@@ -13,7 +13,7 @@ test('candidate discovery stays narrow while claiming native warning status tile
   assert.doesNotMatch(coordinator, /a\[href\*="\/status\/"\] img/);
   assert.doesNotMatch(stylesheet, /card\.wrapper/);
   assert.match(coordinator, /function nativeWarningRootFor/);
-  assert.match(coordinator, /warningPattern\.test\(link\.innerText/);
+  assert.match(coordinator, /warningPattern\.test\(link\.textContent/);
 });
 
 test('verdict roots override the fail-closed hiding rule', () => {
@@ -41,6 +41,70 @@ test('graphql response bytes stream through before metadata parsing', () => {
   assert.ok(onData >= 0 && write > onData && write < onStop, 'filter must forward each chunk inside ondata');
 });
 
+test('VPN-stable author sensitivity is applied directly without persisted learning', () => {
+  const background = readFileSync(path.join(root, 'background.js'), 'utf8');
+  const metadata = readFileSync(path.join(root, 'x-metadata.js'), 'utf8');
+  assert.match(metadata, /authorHasSensitivityMarker\(node\)/);
+  assert.match(metadata, /const tweetNode = isTweetNode\(node, media, pairedTweet\)/);
+  assert.match(background, /storage\.local\.remove\(\['xSensitiveTweetCache', 'xRestrictedAuthorCache'\]\)/);
+  assert.doesNotMatch(background, /state\.x(?:SensitiveTweet|RestrictedAuthor)Cache/);
+  assert.doesNotMatch(background, /storage\.local\.set\(\{\s*x(?:SensitiveTweet|RestrictedAuthor)Cache/);
+  assert.doesNotMatch(metadata, /rememberSensitiveTweetIds|sensitiveTweetIdsFromCache/);
+});
+
+test('obsolete learning-cache cleanup cannot prevent protection settings from loading', () => {
+  const background = readFileSync(path.join(root, 'background.js'), 'utf8');
+  const protectionAssignment = background.indexOf('state.xProtection = {');
+  const cacheCleanup = background.indexOf("browser.storage.local.remove(['xSensitiveTweetCache', 'xRestrictedAuthorCache'])");
+  assert.ok(protectionAssignment >= 0 && cacheCleanup > protectionAssignment,
+    'optional cache deletion must happen only after protection settings are restored');
+  assert.match(background, /storage\.local\.remove\([^;]+\)\.catch\(\(\) => \{\}\)/,
+    'optional cache deletion must not abort background startup');
+});
+
+test('background restores X protection in already-open tabs after an extension reload', () => {
+  const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const background = readFileSync(path.join(root, 'background.js'), 'utf8');
+  const contentScript = manifest.content_scripts[0];
+
+  assert.ok(manifest.permissions.includes('scripting'),
+    'restoring an existing tab requires the scripting permission');
+  assert.match(coordinator, /message\?\.type === 'tabCloserProtectionPing'/,
+    'the coordinator must answer a versioned liveness probe');
+  assert.match(coordinator, /const xProtectionCoordinatorVersion = 'video-probe-v1'/);
+  assert.match(coordinator, /version: xProtectionCoordinatorVersion/);
+  assert.match(background, /browser\.tabs\.sendMessage\(tab\.id, \{ type: 'tabCloserProtectionPing' \}\)/,
+    'healthy tabs must be detected before any injection is attempted');
+  assert.match(background, /if \(response\?\.version === xContentScriptVersion\) return;/,
+    'a healthy coordinator must prevent duplicate injection');
+  const pingIndex = background.indexOf("browser.tabs.sendMessage(tab.id, { type: 'tabCloserProtectionPing' })");
+  const cssIndex = background.indexOf('browser.scripting.insertCSS');
+  const scriptIndex = background.indexOf('browser.scripting.executeScript');
+  assert.ok(pingIndex >= 0 && cssIndex > pingIndex && scriptIndex > cssIndex,
+    'ping, CSS restoration, and script restoration must remain in safe order');
+
+  assert.match(background, /browser\.scripting\.insertCSS/);
+  assert.match(background, /browser\.scripting\.executeScript/);
+
+  let previousIndex = -1;
+  for (const file of contentScript.js) {
+    const index = background.indexOf(`'${file}'`);
+    assert.ok(index > previousIndex, `${file} must be reinjected in manifest order`);
+    previousIndex = index;
+  }
+  for (const file of contentScript.css) {
+    assert.ok(background.includes(`'${file}'`), `${file} must be restored with the coordinator`);
+  }
+  for (const pattern of contentScript.matches) {
+    assert.ok(background.includes("'" + pattern + "'"), 'existing-tab query must include ' + pattern);
+  }
+
+  const loadState = background.lastIndexOf('await loadState();');
+  const restoreTabs = background.lastIndexOf('await ensureExistingXTabsProtected();');
+  assert.ok(loadState >= 0 && restoreTabs > loadState,
+    'existing-tab restoration must run after protection settings load');
+});
+
 test('pending and protected media show blurred previews while staying unplayable and unclickable', () => {
   // Blur targets the root's children (not bare img/video selectors) because X
   // renders photos as background-image divs the img selector misses.
@@ -56,12 +120,17 @@ test('protected media is covered by a deterministic sacred-art painting with a c
   assert.ok(manifest.web_accessible_resources.some(entry => entry.resources.includes('assets/sacred-art/*')),
     'paintings must be web-accessible on X pages');
   assert.ok(manifest.content_scripts[0].js.includes('sacred-art-list.js'), 'the generated art list must load before the coordinator');
-  assert.match(coordinator, /hashString\(rootFingerprint\(root\)\)/, 'artwork choice must be deterministic per media');
+  assert.match(coordinator, /hashString\(sacredArtKeyFor\(root\)\)/, 'artwork choice must use a stable post/media identity');
+  assert.match(coordinator, /sacredArtByRoot\.get\(root\)/, 'a mounted media root must retain its painting through source churn');
   assert.match(coordinator, /state === 'protected' && mature \? sacredArtUrlFor\(root\) : null/,
     'only confirmed mature verdicts may show a painting');
   assert.match(coordinator, /willRetry = state === 'protected' && !mature && retryableReason\.test/,
     'failure verdicts awaiting retry must render like the pending state');
-  assert.match(stylesheet, /\.tabcloser-media-overlay-art \{[^}]*background-size: cover !important/);
+  assert.match(stylesheet, /\.tabcloser-media-overlay-art \{[^}]*background-size: cover !important/,
+    'the artwork backdrop must fill the whole media cell');
+  assert.match(stylesheet, /\.tabcloser-overlay-artwork \{[^}]*background-size: contain !important/,
+    'the foreground artwork must remain fully visible instead of being cropped');
+  assert.doesNotMatch(stylesheet, /object-fit\s*:/, 'the extension must not contribute Firefox object-fit parse warnings');
   assert.match(stylesheet, /\.tabcloser-media-overlay \{[^}]*background-color:/, 'the base overlay must not use the background shorthand, which would reset the painting');
   assert.doesNotMatch(stylesheet, /\.tabcloser-media-overlay \{[^}]*background: rgba/);
 });
@@ -125,7 +194,10 @@ test('the overlay and click blocker cover the full clickable photo/video cell', 
   assert.match(coordinator, /overlayHostFor/);
   assert.match(coordinator, /host\.appendChild\(overlay\)/);
   assert.match(coordinator, /\.tabcloser-overlay-host'\)/, 'click blocker must include the overlay host');
-  assert.match(stylesheet, /\.tabcloser-overlay-host \{[^}]*position: relative !important/);
+  assert.doesNotMatch(stylesheet, /\.tabcloser-overlay-host \{[^}]*position: relative !important/,
+    'the base host must preserve X grid anchors that are already positioned');
+  assert.match(stylesheet, /\.tabcloser-overlay-host-static \{[^}]*position: relative !important/,
+    'only static hosts receive the positioning fallback');
 });
 
 test('emoji, avatar, and hashflag images never become media roots or classifier input', () => {
@@ -136,15 +208,48 @@ test('emoji, avatar, and hashflag images never become media roots or classifier 
   assert.match(coordinator, /filter\(image => !decorativeImage\(image\)\)/);
 });
 
-test('a blob-streamed video samples later frames and never trusts its poster alone', () => {
-  assert.doesNotMatch(coordinator, /reason: 'poster'/);
-  assert.doesNotMatch(coordinator, /posterVerifiedSafe/);
-  assert.match(coordinator, /classifyVideoFrames\(video, keyPrefix, source \|\| video\.poster \|\| 'inline'\)/);
-  assert.match(coordinator, /videoSampleTimes\(video\.duration\)/);
+test('videos use metadata, posters, and bounded detached frames without touching visible playback', () => {
+  const metadata = readFileSync(path.join(root, 'x-metadata.js'), 'utf8');
+  assert.match(coordinator, /async function classifyVideoPoster/);
+  assert.match(coordinator, /classifyUrl\(poster, keyPrefix \+ '\|poster\|' \+ normalized\)/);
+  assert.match(metadata, /function extractDirectVideoSources/);
+  assert.match(coordinator, /function boundedDetachedVideoSampleTimes/);
+  assert.ok(coordinator.includes('[duration * 0.15, duration * 0.5, duration * 0.85]'),
+    'only three detached frames may be sampled');
+  assert.match(coordinator, /function sampleDetachedVideoSource/);
+  assert.ok(coordinator.includes('probe.currentTime = time'));
+  assert.ok(coordinator.includes("reject(new Error('detached video probe timeout'))"));
+  assert.ok(coordinator.includes('}, 8000);'), 'detached probing must have a hard time ceiling');
+  assert.ok(coordinator.includes('disposeDetachedVideoProbe(probe)'));
+  assert.doesNotMatch(coordinator, /classifyVideoFrames/);
+  assert.doesNotMatch(coordinator, /videoSampleTimes/);
+  assert.doesNotMatch(coordinator, /video\.buffered/);
+  assert.doesNotMatch(coordinator, /video\.currentTime\s*=/);
 });
 
 test('a responsive-image fingerprint change requeues instead of leaving media pending', () => {
   assert.doesNotMatch(coordinator, /\[element\.currentSrc, element\.src, element\.poster\]/);
   assert.match(coordinator, /rootFingerprint\(root\) !== fingerprint[\s\S]{0,120}discoverRoot\(root\)/);
   assert.match(coordinator, /attributeFilter: \['src', 'srcset', 'poster', 'href'\]/);
+});
+
+test('fragmented VPN responses and slow media loads stay bounded', () => {
+  const background = readFileSync(path.join(root, 'background.js'), 'utf8');
+  assert.match(background, /responseChunks\.push\(/, 'fragmented VPN responses must accumulate linearly');
+  assert.match(background, /responseChunks\.join\(''\)/, 'captured chunks should join only once at stream completion');
+  assert.doesNotMatch(background, /response \+= decoder\.decode/, 'per-chunk string concatenation becomes quadratic');
+  assert.match(background, /const xClassifierInFlight = new Map\(\)/);
+  assert.match(background, /enqueueXMediaLoad/);
+  assert.match(background, /xClassifierInFlight\.get\(cacheKey\)/);
+  assert.doesNotMatch(background, /enqueueXClassification\(async \(\) => \{\s*try \{\s*const imageData/,
+    'network loading must happen before entering the serial inference queue');
+});
+
+test('mutation bursts are batched and extension-owned artwork is excluded from discovery', () => {
+  assert.match(coordinator, /function queueDiscovery/);
+  assert.match(coordinator, /function extensionOwnedElement/);
+  assert.match(coordinator, /if \(extensionOwnedElement\(node\)\) return null;/);
+  const observer = coordinator.slice(coordinator.indexOf('new MutationObserver'));
+  assert.match(observer, /queueDiscovery\(/);
+  assert.doesNotMatch(observer, /discoverWithin\(node\)/, 'observer callbacks must not synchronously scan every added subtree');
 });

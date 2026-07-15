@@ -44,10 +44,30 @@ async function loadState() {
     replaceText: raw.replaceText === true,
     blockLike: raw.blockLike === true,
   };
+  // Obsolete learning data is optional cleanup and must never abort startup.
+  browser.storage.local.remove(['xSensitiveTweetCache', 'xRestrictedAuthorCache']).catch(() => {});
 }
 
 // Higher rank censors more; loosening is refused while the model tier is locked.
 const SENSITIVITY_RANK = { lenient: 0, balanced: 1, strict: 2 };
+
+const xContentScriptVersion = 'video-probe-v1';
+const xTabUrlPatterns = [
+  '*://x.com/*',
+  '*://*.x.com/*',
+  '*://twitter.com/*',
+  '*://*.twitter.com/*',
+];
+const xContentStyleFiles = ['x-protection-v3.css'];
+const xContentScriptFiles = [
+  'common.js',
+  'x-metadata.js',
+  'x-verdict.js',
+  'x-media-utils.js',
+  'sacred-art-list.js',
+  'catholic-quotes.js',
+  'x-protection-v2.js',
+];
 
 async function persist() {
   await browser.storage.local.set({
@@ -69,6 +89,54 @@ async function notifyXProtection() {
     xProtection: state.xProtection,
   }).catch(() => {})));
 }
+
+// === X content-script lifecycle ===
+async function ensureXContentScriptInTab(tab) {
+  if (!Number.isInteger(tab?.id)) return;
+
+  try {
+    const response = await browser.tabs.sendMessage(tab.id, { type: 'tabCloserProtectionPing' });
+    if (response?.version === xContentScriptVersion) return;
+  } catch {
+    // Expected after an extension reload: Firefox removes the old content
+    // script realm but does not reload an already-open single-page app.
+  }
+
+  try {
+    await browser.scripting.insertCSS({
+      target: { tabId: tab.id },
+      files: xContentStyleFiles,
+    });
+    await browser.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: xContentScriptFiles,
+    });
+    console.debug('[TabCloser DEBUG lifecycle-v1]', JSON.stringify({
+      event: 'existing-tab-restored',
+      tabId: tab.id,
+      version: xContentScriptVersion,
+    }));
+  } catch (error) {
+    console.warn('[TabCloser] Could not restore X protection in an existing tab', {
+      tabId: tab.id,
+      error: String(error?.message || error),
+    });
+  }
+}
+
+async function ensureExistingXTabsProtected() {
+  let tabs;
+  try {
+    tabs = await browser.tabs.query({ url: xTabUrlPatterns });
+  } catch (error) {
+    console.warn('[TabCloser] Could not find existing X tabs for protection restoration', {
+      error: String(error?.message || error),
+    });
+    return;
+  }
+  await Promise.all(tabs.map(ensureXContentScriptInTab));
+}
+
 
 // === Lookups ===
 function findRule(host) {
@@ -253,87 +321,128 @@ browser.webNavigation.onBeforeNavigate.addListener(async (details) => {
 
 
 // === X / Twitter sensitive-media metadata ===
-function normalizeMediaUrl(value) {
+const xMetadataDebugPrefix = '[TabCloser DEBUG metadata-v1]';
+
+function focalTweetIdFromXGraphqlUrl(value) {
   try {
-    const url = new URL(value);
-    return url.origin + url.pathname;
+    const variables = JSON.parse(new URL(value).searchParams.get('variables') || '{}');
+    const id = variables.focalTweetId || variables.tweetId || variables.restId;
+    return id == null ? null : String(id);
   } catch {
     return null;
   }
 }
 
-function containsSensitivityMarker(value, depth = 0) {
-  if (!value || typeof value !== 'object' || depth > 3) return false;
-  if (value.possibly_sensitive === true || value.sensitive_media_warning) return true;
-  return Object.values(value).some(child => containsSensitivityMarker(child, depth + 1));
-}
-
-function extractSensitiveMedia(payload) {
-  const urls = new Set();
-  const tweetIds = new Set();
-  const seen = new Set();
-
-  function addUrl(value) {
-    const normalized = normalizeMediaUrl(value);
-    if (normalized) urls.add(normalized);
-  }
-
-  function inspect(node) {
-    if (!node || typeof node !== 'object' || seen.has(node)) return;
-    seen.add(node);
-
-    const legacy = node.legacy && typeof node.legacy === 'object' ? node.legacy : node;
-    const media = legacy.extended_entities?.media || legacy.entities?.media ||
-      node.extended_entities?.media || node.entities?.media;
-    if (Array.isArray(media) && media.length && containsSensitivityMarker(node)) {
-      const tweetId = node.rest_id || legacy.id_str || node.id_str;
-      if (tweetId) tweetIds.add(String(tweetId));
-      for (const item of media) {
-        addUrl(item.media_url_https);
-        addUrl(item.media_url);
-        for (const variant of item.video_info?.variants ?? []) addUrl(variant.url);
-      }
-    }
-
-    for (const child of Object.values(node)) {
-      if (child && typeof child === 'object') inspect(child);
-    }
-  }
-
-  inspect(payload);
-  return { urls: [...urls], tweetIds: [...tweetIds] };
+function sendXMetadataDiagnostic(tabId, event, details = {}) {
+  const diagnostic = { event, ...details };
+  console.debug(xMetadataDebugPrefix, diagnostic);
+  browser.tabs.sendMessage(tabId, {
+    type: 'xSensitiveMediaDiagnostic',
+    diagnostic,
+  }).catch(() => {});
 }
 
 // Only operations that can carry tweet/media payloads are worth parsing; misses
-// simply fall back to the fail-closed visual classifier.
+// simply fall back to the poster classifier.
 const xTweetOperationPattern = /Timeline|Tweet|Search|Bookmark|Media|Conversation|List|Detail|Likes|Explore/i;
+const maxCapturedXGraphqlBytes = 8 * 1024 * 1024;
 
 function observeXGraphqlResponse(details) {
-  if (!state.xProtection.labeled.enabled || details.tabId < 0) return;
+  if (details.tabId < 0) return;
   const operation = new URL(details.url).pathname.split('/').pop() || '';
   if (!xTweetOperationPattern.test(operation)) return;
-  const filter = browser.webRequest.filterResponseData(details.requestId);
+  const focalTweetId = focalTweetIdFromXGraphqlUrl(details.url);
+  const debug = /TweetDetail/i.test(operation);
+  if (!state.xProtection.labeled.enabled) {
+    if (debug) sendXMetadataDiagnostic(details.tabId, 'intercept-skipped', {
+      operation,
+      focalTweetId,
+      reason: 'labeled-disabled',
+      labeledEnabled: false,
+      modelEnabled: state.xProtection.model.enabled,
+    });
+    return;
+  }
+  if (debug) sendXMetadataDiagnostic(details.tabId, 'intercept-start', { operation, focalTweetId });
+  let filter;
+  try {
+    filter = browser.webRequest.filterResponseData(details.requestId);
+  } catch (error) {
+    if (debug) sendXMetadataDiagnostic(details.tabId, 'filter-error', {
+      operation,
+      focalTweetId,
+      error: String(error?.message || error),
+    });
+    return;
+  }
   const decoder = new TextDecoder();
-  let response = '';
+  const responseChunks = [];
+  let capturedBytes = 0;
+  let captureEnabled = true;
 
   filter.ondata = event => {
     // Pass bytes through immediately; the pending overlay already prevents a
     // sensitive flash, so X must never wait on our parsing.
     filter.write(event.data);
-    response += decoder.decode(event.data, { stream: true });
+    if (!captureEnabled) return;
+    const byteLength = event.data?.byteLength || 0;
+    if (capturedBytes + byteLength > maxCapturedXGraphqlBytes) {
+      captureEnabled = false;
+      responseChunks.length = 0;
+      if (debug) sendXMetadataDiagnostic(details.tabId, 'capture-too-large', {
+        operation,
+        focalTweetId,
+        capturedBytes: capturedBytes + byteLength,
+        limit: maxCapturedXGraphqlBytes,
+      });
+      return;
+    }
+    capturedBytes += byteLength;
+    responseChunks.push(decoder.decode(event.data, { stream: true }));
   };
   filter.onstop = async () => {
     filter.close();
-    response += decoder.decode();
+    if (!captureEnabled) return;
+    if (bootPromise) await bootPromise;
+    responseChunks.push(decoder.decode());
     try {
-      const metadata = TabCloserXMetadata.extractSensitiveMedia(JSON.parse(response));
-      if (metadata.urls.length || metadata.tweetIds.length) {
+      const payload = JSON.parse(responseChunks.join(''));
+      const metadata = TabCloserXMetadata.extractSensitiveMedia(payload);
+      metadata.videoSourcesByTweetId =
+        TabCloserXMetadata.extractDirectVideoSources(payload);
+      const extractedTweetIds = [...metadata.tweetIds];
+      const regionalTweetIds = TabCloserXMetadata.extractAgeVerificationTweetIds(payload);
+      if (debug) sendXMetadataDiagnostic(details.tabId, 'intercept-complete', {
+        operation,
+        focalTweetId,
+        capturedBytes,
+        extractedTweetIds,
+        regionalTweetIds,
+        deliveredTweetIds: metadata.tweetIds,
+        extractedUrlCount: metadata.urls.length,
+        directVideoSourceCount: Object.keys(metadata.videoSourcesByTweetId).length,
+        signals: TabCloserXMetadata.summarizeSensitivitySignals(payload, focalTweetId),
+      });
+      if (metadata.urls.length || metadata.tweetIds.length ||
+          Object.keys(metadata.videoSourcesByTweetId).length) {
         await browser.tabs.sendMessage(details.tabId, { type: 'xSensitiveMediaMetadata', metadata });
       }
-    } catch {}
+    } catch (error) {
+      if (debug) sendXMetadataDiagnostic(details.tabId, 'parse-error', {
+        operation,
+        focalTweetId,
+        capturedBytes,
+        error: String(error?.message || error),
+      });
+    }
   };
-  filter.onerror = () => {
+  filter.onerror = event => {
     // A failed stream is already disconnected by Firefox; calling disconnect again throws.
+    if (debug) sendXMetadataDiagnostic(details.tabId, 'stream-error', {
+      operation,
+      focalTweetId,
+      error: String(event?.error || 'response filter error'),
+    });
   };
 }
 
@@ -355,6 +464,10 @@ browser.webRequest.onBeforeRequest.addListener(
 const xClassifierCache = new TabCloserXMediaUtils.LruCache(500);
 const xClassifierDiagnostics = { requests: 0, cacheHits: 0, safe: 0, protected: 0, errors: 0, timeouts: 0 };
 let xClassifierQueue = Promise.resolve();
+const xClassifierInFlight = new Map();
+const xMediaLoadQueue = [];
+const maxConcurrentXMediaLoads = 4;
+let activeXMediaLoads = 0;
 
 function isXPageUrl(value) {
   try {
@@ -380,6 +493,24 @@ function enqueueXClassification(work) {
   const result = xClassifierQueue.then(work, work);
   xClassifierQueue = result.catch(() => {});
   return result;
+}
+
+function drainXMediaLoadQueue() {
+  while (activeXMediaLoads < maxConcurrentXMediaLoads && xMediaLoadQueue.length) {
+    const task = xMediaLoadQueue.shift();
+    activeXMediaLoads += 1;
+    Promise.resolve().then(task.work).then(task.resolve, task.reject).finally(() => {
+      activeXMediaLoads -= 1;
+      drainXMediaLoadQueue();
+    });
+  }
+}
+
+function enqueueXMediaLoad(work) {
+  return new Promise((resolve, reject) => {
+    xMediaLoadQueue.push({ work, resolve, reject });
+    drainXMediaLoadQueue();
+  });
 }
 
 function preferredXFetchUrl(value) {
@@ -464,14 +595,19 @@ async function classifyXMedia(msg, sender) {
     xClassifierDiagnostics.cacheHits += 1;
     return cached;
   }
+  const inFlight = xClassifierInFlight.get(cacheKey);
+  if (inFlight) return inFlight;
+
   xClassifierDiagnostics.requests += 1;
-  return enqueueXClassification(async () => {
+  const job = (async () => {
     try {
-      const imageData = msg.kind === 'url' ? await imageDataFromXUrl(msg.url) : imageDataFromFrameMessage(msg);
-      const classified = await Promise.race([
+      const imageData = msg.kind === 'url'
+        ? await enqueueXMediaLoad(() => imageDataFromXUrl(msg.url))
+        : imageDataFromFrameMessage(msg);
+      const classified = await enqueueXClassification(() => Promise.race([
         TabCloserClassifier.classifyImageData(imageData, sensitivity),
         new Promise((_, reject) => setTimeout(() => reject(new Error('classification timeout')), 10000)),
-      ]);
+      ]));
       const result = { verdict: classified.verdict, reason: classified.reason, modelVersion: TabCloserXVerdict.MODEL_VERSION };
       xClassifierCache.set(cacheKey, result);
       if (result.verdict === 'safe') xClassifierDiagnostics.safe += 1;
@@ -488,7 +624,13 @@ async function classifyXMedia(msg, sender) {
       });
       return { verdict: 'protect', reason: timedOut ? 'timeout' : 'error', modelVersion: TabCloserXVerdict.MODEL_VERSION };
     }
-  });
+  })();
+  xClassifierInFlight.set(cacheKey, job);
+  try {
+    return await job;
+  } finally {
+    if (xClassifierInFlight.get(cacheKey) === job) xClassifierInFlight.delete(cacheKey);
+  }
 }
 
 // === Messages from popup / options ===
@@ -607,6 +749,9 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
       return {
         ...xClassifierDiagnostics,
         cacheSize: xClassifierCache.size,
+        inFlightRequests: xClassifierInFlight.size,
+        queuedMediaLoads: xMediaLoadQueue.length,
+        activeMediaLoads: activeXMediaLoads,
         modelVersion: TabCloserXVerdict.MODEL_VERSION,
       };
     case 'unblock': {
@@ -634,6 +779,7 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
 bootPromise = (async () => {
   await loadState();
   if (state.xProtection.model.enabled) TabCloserClassifier.warmUp();
+  await ensureExistingXTabsProtected();
   // Periodic safety commit (0.5 min = Firefox MV3 minimum for installed addons)
   browser.alarms.create('commit', { periodInMinutes: 0.5 });
   await handleFocusChange();

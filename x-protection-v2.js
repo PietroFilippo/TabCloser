@@ -1,17 +1,35 @@
-// Fail-closed X media coordinator. Modes: 'off'; 'labeled' hides only media
-// X itself marks mature; 'full' additionally runs the bundled local
-// classifier and keeps unmatched media hidden until it reports safe.
+// X media coordinator. Modes: 'off'; 'labeled' hides only media X itself
+// marks mature; 'full' additionally classifies images, video posters, and up
+// to three frames from a detached low-bandwidth video probe. The visible X
+// player is never used, decoded, or seeked by TabCloser.
+const xProtectionCoordinatorVersion = 'video-probe-v1';
 let mode = 'off';
-let settings = { replaceText: false, blockLike: false };
+let settings = { replaceText: false, blockLike: false, sensitivity: 'balanced' };
 let operationId = 0;
 const sensitiveUrls = new Set();
 const sensitiveTweetIds = new Set();
+const directVideoSourcesByTweetId = new Map();
+const directVideoSourceWaitersByTweetId = new Map();
+const directVideoVerdictCache = new Map();
+const directVideoProbeInFlight = new Map();
+const activeDetachedVideoProbes = new Set();
+const sacredArtByRoot = new WeakMap();
+const blockedPlaybackStateByMedia = new WeakMap();
 const rootRecords = new WeakMap();
-const warningPattern = /(?:sensitive content|content warning|may contain sensitive|potentially sensitive)/i;
+const verifiedSafeMediaKeys = new Set();
+const warningPattern = /(?:sensitive content|content warning|warning\s*:\s*(?:nudity|adult content)|may contain sensitive|potentially sensitive)/i;
+const maxDirectVideoEntries = 500;
 const mediaSelector = '[data-testid="tweetPhoto"], [data-testid="videoComponent"], [data-testid="videoPlayer"]';
-const mediaElementSelector = 'img[src], video[poster], video[src], source[src]';
+const mediaElementSelector = 'img[src], video, source[src]';
 const statusPathPattern = /\/status\/(\d+)(?:\/(?:photo|video)\/\d+)?/;
 const statusLinkSelector = 'a[href*="/status/"]';
+const extensionUiSelector = '.tabcloser-media-overlay, .tabcloser-lightbox';
+
+const xMetadataDebugPrefix = '[TabCloser DEBUG metadata-v1]';
+
+function xMetadataDebug(event, details = {}) {
+  console.debug(xMetadataDebugPrefix, JSON.stringify({ event, ...details }));
+}
 
 function waitForEvent(target, successEvent, errorEvent, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -29,13 +47,6 @@ function waitForEvent(target, successEvent, errorEvent, timeoutMs) {
   });
 }
 
-function withTimeout(promise, timeoutMs, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(label + ' timeout')), timeoutMs)),
-  ]);
-}
-
 function statusIdFromHref(href) {
   return href.match(statusPathPattern)?.[1] || null;
 }
@@ -46,7 +57,8 @@ function statusIdFor(node) {
   if (directId) return directId;
   const article = node.closest?.('article');
   const articleLink = article?.querySelector(statusLinkSelector);
-  return articleLink ? statusIdFromHref(articleLink.getAttribute('href') || '') : null;
+  if (articleLink) return statusIdFromHref(articleLink.getAttribute('href') || '');
+  return statusIdFromHref(location.pathname);
 }
 
 // X's media-search grid can replace the entire preview with a native mature
@@ -59,15 +71,38 @@ function nativeWarningRootFor(node) {
   if (node.closest('.tabcloser-media-overlay, .tabcloser-lightbox')) return null;
   const link = node.matches(statusLinkSelector) ? node : node.closest(statusLinkSelector);
   if (!link || !statusIdFromHref(link.getAttribute('href') || '')) return null;
-  return warningPattern.test(link.innerText || '') ? link : null;
+  return warningPattern.test(link.textContent || '') ? link : null;
+}
+
+function isMediaSearchPage() {
+  try {
+    const page = new URL(location.href);
+    return page.pathname === '/search' && page.searchParams.get('f') === 'media';
+  } catch {
+    return false;
+  }
+}
+
+function searchMediaRootFor(node) {
+  if (!(node instanceof Element) || !isMediaSearchPage()) return null;
+  if (node.closest('.tabcloser-media-overlay, .tabcloser-lightbox')) return null;
+  const link = node.matches(statusLinkSelector) ? node : node.closest(statusLinkSelector);
+  if (!link || !statusIdFromHref(link.getAttribute('href') || '')) return null;
+  if (link.querySelector(mediaSelector)) return null;
+  const hasVideo = !!link.querySelector('video, [data-testid="videoComponent"], [data-testid="videoPlayer"]');
+  const hasMediaImage = [...link.querySelectorAll('img[src]')].some(image => !decorativeImage(image));
+  return hasVideo || hasMediaImage ? link : null;
 }
 
 function mediaRootFor(node) {
   if (!(node instanceof Element)) return null;
+  if (extensionOwnedElement(node)) return null;
   const warningRoot = nativeWarningRootFor(node);
   if (warningRoot) return warningRoot;
   const selected = node.closest(mediaSelector);
   if (selected) return selected;
+  const searchMediaRoot = searchMediaRootFor(node);
+  if (searchMediaRoot) return searchMediaRoot;
   const link = node.closest(statusLinkSelector);
   const href = link?.getAttribute('href') || '';
   if (/\/status\/\d+\/(?:photo|video)\/\d+/.test(href) && link.querySelector('img, video')) return link;
@@ -78,6 +113,7 @@ function mediaRootFor(node) {
 }
 
 function decorativeImage(image) {
+  if (extensionOwnedElement(image)) return true;
   const value = image.currentSrc || image.src || '';
   try {
     const url = new URL(value);
@@ -91,13 +127,20 @@ function decorativeImage(image) {
   }
 }
 
+function extensionOwnedElement(element) {
+  return !!element?.closest?.(extensionUiSelector);
+}
+
+function mediaElementsWithin(root, selector) {
+  return [
+    ...(root.matches?.(selector) ? [root] : []),
+    ...root.querySelectorAll(selector),
+  ].filter(element => !extensionOwnedElement(element));
+}
+
 function sourceValues(root) {
-  const elements = [
-    ...(root.matches?.(mediaElementSelector) ? [root] : []),
-    ...root.querySelectorAll(mediaElementSelector),
-  ];
   const values = [];
-  for (const element of elements) {
+  for (const element of mediaElementsWithin(root, mediaElementSelector)) {
     for (const value of TabCloserXMediaUtils.preferredMediaSources(element)) {
       if (value && !values.includes(value)) values.push(value);
     }
@@ -106,7 +149,40 @@ function sourceValues(root) {
 }
 
 function rootFingerprint(root) {
-  return [statusIdFor(root) || 'none', ...sourceValues(root).map(value => TabCloserXMetadata.normalizeMediaUrl(value) || value)].join('|');
+  const shape = 'images=' + mediaElementsWithin(root, 'img[src]').length +
+    ',videos=' + mediaElementsWithin(root, 'video').length;
+  return [statusIdFor(root) || 'none', shape,
+    ...sourceValues(root).map(value => TabCloserXMetadata.normalizeMediaUrl(value) || value)].join('|');
+}
+
+function stableMediaVerificationKey(root) {
+  const tweetId = statusIdFor(root);
+  if (!tweetId) return null;
+  const poster = mediaElementsWithin(root, 'video')
+    .map(video => video.poster)
+    .find(Boolean);
+  const stableSource = poster || sourceValues(root).find(value => value && !value.startsWith('blob:'));
+  if (!stableSource) return null;
+  const normalized = TabCloserXMetadata.normalizeMediaUrl(stableSource) || stableSource;
+  return tweetId + '|' + normalized;
+}
+
+function rememberVerifiedSafeMedia(root) {
+  const key = stableMediaVerificationKey(root);
+  if (!key) return;
+  verifiedSafeMediaKeys.delete(key);
+  verifiedSafeMediaKeys.add(key);
+  while (verifiedSafeMediaKeys.size > 500) {
+    verifiedSafeMediaKeys.delete(verifiedSafeMediaKeys.values().next().value);
+  }
+}
+
+function hasVerifiedSafeMedia(root) {
+  const key = stableMediaVerificationKey(root);
+  if (!key || !verifiedSafeMediaKeys.has(key)) return false;
+  verifiedSafeMediaKeys.delete(key);
+  verifiedSafeMediaKeys.add(key);
+  return true;
 }
 
 function mediaUrlIsSensitive(root) {
@@ -118,7 +194,7 @@ function mediaUrlIsSensitive(root) {
 // recall is worth the occasional author who over-labels harmless posts.
 function metadataProtects(root) {
   const tweetId = statusIdFor(root);
-  return warningPattern.test(root.innerText || '') ||
+  return warningPattern.test(root.textContent || '') ||
     mediaUrlIsSensitive(root) ||
     (!!tweetId && sensitiveTweetIds.has(tweetId));
 }
@@ -134,18 +210,45 @@ function overlayFor(root) {
   return [...overlayHostFor(root).children].find(child => child.classList?.contains('tabcloser-media-overlay')) || null;
 }
 
+function activateOverlayHost(host) {
+  host.classList.add('tabcloser-overlay-host');
+  host.classList.remove('tabcloser-overlay-host-static');
+  const position = getComputedStyle(host).position;
+  if (!position || position === 'static') host.classList.add('tabcloser-overlay-host-static');
+}
+
+function clearOverlayHost(host) {
+  host.classList.remove('tabcloser-overlay-host', 'tabcloser-overlay-host-static');
+}
+
 function hashString(value) {
   let hash = 0;
   for (let index = 0; index < value.length; index += 1) hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
   return hash;
 }
 
+function sacredArtKeyFor(root) {
+  const link = root.closest?.(statusLinkSelector);
+  const statusPath = (link?.getAttribute('href') || '').match(statusPathPattern)?.[0];
+  if (statusPath) return statusPath;
+  const tweetId = statusIdFor(root);
+  if (tweetId) return '/status/' + tweetId;
+  const stableSource = sourceValues(root)
+    .map(value => TabCloserXMetadata.normalizeMediaUrl(value) || value)
+    .find(value => value && !value.startsWith('blob:'));
+  return stableSource || rootFingerprint(root);
+}
+
 // Deterministic per-media pick so re-renders never shuffle the artwork.
 function sacredArtUrlFor(root) {
   const artList = globalThis.TabCloserSacredArt || [];
   if (!artList.length) return null;
-  const pick = artList[hashString(rootFingerprint(root)) % artList.length];
-  return browser.runtime.getURL('assets/sacred-art/' + pick);
+  const existing = sacredArtByRoot.get(root);
+  if (existing) return existing;
+  const pick = artList[hashString(sacredArtKeyFor(root)) % artList.length];
+  const url = browser.runtime.getURL('assets/sacred-art/' + pick);
+  sacredArtByRoot.set(root, url);
+  return url;
 }
 
 // Clicking censored media opens our own viewer with the painting, never X's
@@ -233,6 +336,34 @@ function restoreAllArticleText() {
   });
 }
 
+function mediaPlayersWithin(root) {
+  return [
+    ...(root.matches?.('video, audio') ? [root] : []),
+    ...root.querySelectorAll('video, audio'),
+  ];
+}
+
+function blockMediaPlayback(player) {
+  if (!blockedPlaybackStateByMedia.has(player)) {
+    blockedPlaybackStateByMedia.set(player, {
+      muted: player.muted,
+    });
+  }
+  player.pause();
+  player.muted = true;
+}
+
+function restoreMediaPlayback(player) {
+  const state = blockedPlaybackStateByMedia.get(player);
+  if (!state) return;
+  blockedPlaybackStateByMedia.delete(player);
+  player.muted = state.muted;
+}
+
+function restoreRootPlayback(root) {
+  for (const player of mediaPlayersWithin(root)) restoreMediaPlayback(player);
+}
+
 function setRootState(root, state, reason) {
   if (!root?.isConnected) return;
   root.dataset.tabcloserMediaState = state;
@@ -241,12 +372,13 @@ function setRootState(root, state, reason) {
   const existing = overlayFor(root);
   const article = root.closest('article');
   if (state === 'safe') {
+    restoreRootPlayback(root);
     existing?.remove();
-    host.classList.remove('tabcloser-overlay-host');
+    clearOverlayHost(host);
     if (article && !article.querySelector('[data-tabcloser-media-state="protected"]')) restoreArticleText(article);
     return;
   }
-  host.classList.add('tabcloser-overlay-host');
+  activateOverlayHost(host);
   const overlay = existing || document.createElement('div');
   // Pending media shows through heavily blurred behind a transparent click
   // shield. The painting and notice are reserved for confirmed mature
@@ -263,29 +395,35 @@ function setRootState(root, state, reason) {
   overlay.style.backgroundImage = artUrl ? 'url("' + artUrl + '")' : '';
   overlay.setAttribute('role', 'img');
   overlay.setAttribute('aria-live', 'polite');
-  overlay.setAttribute('aria-label', shieldOnly ? 'Media is being checked by TabCloser' : 'Sensitive media hidden by TabCloser');
+  const hiddenLabel = 'Sensitive media hidden';
+  overlay.setAttribute('aria-label', shieldOnly ? 'Media is being checked by TabCloser' : hiddenLabel + ' by TabCloser');
   overlay.textContent = '';
+  if (artUrl) {
+    const artwork = document.createElement('div');
+    artwork.className = 'tabcloser-overlay-artwork';
+    artwork.style.backgroundImage = 'url("' + artUrl + '")';
+    artwork.setAttribute('aria-hidden', 'true');
+    overlay.appendChild(artwork);
+  }
   if (!shieldOnly) {
     const label = document.createElement('span');
     label.className = 'tabcloser-overlay-label';
-    label.textContent = 'Sensitive media hidden';
+    label.textContent = hiddenLabel;
     overlay.appendChild(label);
   }
   overlay.title = reason || '';
   if (!existing) host.appendChild(overlay);
   if (state === 'protected' && mature) applyQuoteFor(root);
-  root.querySelectorAll('video, audio').forEach(player => {
-    player.pause();
-    player.muted = true;
-  });
+  for (const player of mediaPlayersWithin(root)) blockMediaPlayback(player);
 }
 
 function clearAllStates() {
   closeLightbox();
   restoreAllArticleText();
   document.querySelectorAll('.tabcloser-media-overlay').forEach(overlay => overlay.remove());
-  document.querySelectorAll('.tabcloser-overlay-host').forEach(host => host.classList.remove('tabcloser-overlay-host'));
+  document.querySelectorAll('.tabcloser-overlay-host').forEach(clearOverlayHost);
   document.querySelectorAll('[data-tabcloser-media-state]').forEach(root => {
+    restoreRootPlayback(root);
     delete root.dataset.tabcloserMediaState;
     delete root.dataset.tabcloserMediaReason;
   });
@@ -293,12 +431,19 @@ function clearAllStates() {
 
 function protectGroup(root, reason) {
   const article = root.closest('article');
-  const roots = article ? candidateRootsWithin(article) : [root];
+  if (!article) {
+    setRootState(root, 'protected', reason);
+    return;
+  }
+  const layer = tweetLayerFor(root, article);
+  const layerRoots = candidateRootsWithin(layer).filter(candidate => tweetLayerFor(candidate, article) === layer);
+  const roots = layerRoots.length ? layerRoots : [root];
   for (const candidate of roots) setRootState(candidate, 'protected', reason);
 }
 
 function candidateRootsWithin(container) {
   if (!(container instanceof Element || container instanceof Document)) return [];
+  if (container instanceof Element && extensionOwnedElement(container)) return [];
   const roots = new Set();
   if (container instanceof Element) {
     const warningRoot = nativeWarningRootFor(container);
@@ -312,7 +457,8 @@ function candidateRootsWithin(container) {
     if (root) roots.add(root);
   });
   container.querySelectorAll?.(statusLinkSelector).forEach(link => {
-    if (nativeWarningRootFor(link)) roots.add(link);
+    const specialRoot = nativeWarningRootFor(link) || searchMediaRootFor(link);
+    if (specialRoot) roots.add(specialRoot);
   });
   return [...roots];
 }
@@ -362,70 +508,189 @@ async function classifyImage(image, keyPrefix) {
   });
 }
 
-async function seekVideo(video, time) {
-  if (Math.abs(video.currentTime - time) < 0.02 && video.readyState >= 2) return;
-  video.currentTime = time;
-  await waitForEvent(video, 'seeked', 'error', 5000);
-}
-async function classifyVideoFrames(video, keyPrefix, source) {
-  if (video.readyState < 1) await waitForEvent(video, 'loadedmetadata', 'error', 8000);
-  const times = TabCloserXMediaUtils.videoSampleTimes(video.duration);
-  if (!times.length) return { verdict: 'protect', reason: 'invalid' };
-  const mediaKey = TabCloserXMetadata.normalizeMediaUrl(source) || source || 'inline';
-  for (const time of times) {
-    await seekVideo(video, time);
-    if (video.readyState < 2) await waitForEvent(video, 'loadeddata', 'error', 5000);
-    const imageData = pixelsFromDrawable(video);
-    const result = await browser.runtime.sendMessage({
-      type: 'classifyXMedia',
-      kind: 'frame',
-      mediaKey: keyPrefix + '|video|' + mediaKey + '|t=' + time,
-      pixels: imageData.data,
-      width: imageData.width,
-      height: imageData.height,
-    });
-    if (result.verdict !== 'safe') return result;
-  }
-  return { verdict: 'safe', reason: 'visual' };
+function ensureClassificationActive(isActive) {
+  if (!isActive()) throw new Error('classification canceled');
 }
 
+function trimOldestMapEntries(map, limit = maxDirectVideoEntries) {
+  while (map.size > limit) map.delete(map.keys().next().value);
+}
 
-async function classifyVideo(video, keyPrefix) {
-  if (video.poster) {
-    const poster = await classifyUrl(video.poster, keyPrefix + '|poster|' + (TabCloserXMetadata.normalizeMediaUrl(video.poster) || video.poster));
-    if (poster.verdict !== 'safe') return poster;
+function rememberDirectVideoSource(tweetId, source) {
+  const id = tweetId == null ? null : String(tweetId);
+  if (!id || !approvedXMediaUrl(source)) return false;
+  directVideoSourcesByTweetId.delete(id);
+  directVideoSourcesByTweetId.set(id, source);
+  trimOldestMapEntries(directVideoSourcesByTweetId);
+  const waiters = directVideoSourceWaitersByTweetId.get(id);
+  if (waiters) {
+    directVideoSourceWaitersByTweetId.delete(id);
+    for (const resolve of waiters) resolve(source);
   }
+  return true;
+}
 
-  const source = video.currentSrc || video.src || video.querySelector('source[src]')?.src;
-  if (!source || !approvedXMediaUrl(source)) {
-    // X normally streams timeline videos through MSE blob URLs. A poster is
-    // only one frame and cannot establish that the rest of a video is safe,
-    // so sample the already-decoded page video and fail closed if that is not
-    // possible. Preserve its position because classification must not visibly
-    // seek the user's player after the overlay is removed.
-    const originalTime = Number.isFinite(video.currentTime) ? video.currentTime : null;
-    try {
-      return await classifyVideoFrames(video, keyPrefix, source || video.poster || 'inline');
-    } finally {
-      if (originalTime != null && video.isConnected) {
-        try { video.currentTime = originalTime; } catch {}
-      }
+function waitForDirectVideoSource(tweetId, timeoutMs = 1500) {
+  const existing = directVideoSourcesByTweetId.get(tweetId);
+  if (existing) return Promise.resolve(existing);
+  return new Promise(resolve => {
+    let waiters = directVideoSourceWaitersByTweetId.get(tweetId);
+    if (!waiters) {
+      waiters = new Set();
+      directVideoSourceWaitersByTweetId.set(tweetId, waiters);
     }
+    let timer = null;
+    const finish = value => {
+      if (timer != null) clearTimeout(timer);
+      waiters.delete(finish);
+      if (!waiters.size) directVideoSourceWaitersByTweetId.delete(tweetId);
+      resolve(value);
+    };
+    waiters.add(finish);
+    timer = setTimeout(() => finish(null), timeoutMs);
+  });
+}
+
+async function directVideoSourceForRoot(root, waitForDetail) {
+  const tweetId = statusIdFor(root);
+  if (!tweetId) return null;
+  const existing = directVideoSourcesByTweetId.get(tweetId);
+  if (existing) return existing;
+  const pageTweetId = statusIdFromHref(location.pathname);
+  if (!waitForDetail || pageTweetId !== tweetId) return null;
+  return waitForDirectVideoSource(tweetId);
+}
+
+function boundedDetachedVideoSampleTimes(duration) {
+  if (!Number.isFinite(duration) || duration <= 0) return [];
+  const latest = Math.max(0, duration - 0.1);
+  const times = [duration * 0.15, duration * 0.5, duration * 0.85]
+    .map(time => Math.min(latest, Math.max(0, time)))
+    .map(time => Math.round(time * 1000) / 1000);
+  return [...new Set(times)];
+}
+
+function disposeDetachedVideoProbe(probe) {
+  if (!probe) return;
+  activeDetachedVideoProbes.delete(probe);
+  try {
+    probe.removeAttribute('src');
+    probe.load();
+  } catch {}
+  probe.remove();
+}
+
+function cancelDetachedVideoProbes() {
+  for (const probe of [...activeDetachedVideoProbes]) disposeDetachedVideoProbe(probe);
+  for (const waiters of directVideoSourceWaitersByTweetId.values()) {
+    for (const resolve of waiters) resolve(null);
   }
+  directVideoSourceWaitersByTweetId.clear();
+  directVideoProbeInFlight.clear();
+}
+
+async function seekDetachedVideoProbe(probe, time) {
+  if (Math.abs(probe.currentTime - time) < 0.02 && probe.readyState >= 2) return;
+  const seeked = waitForEvent(probe, 'seeked', 'error', 4000);
+  probe.currentTime = time;
+  await seeked;
+  if (probe.readyState < 2) await waitForEvent(probe, 'loadeddata', 'error', 3000);
+}
+
+async function sampleDetachedVideoSource(source, control) {
   const probe = document.createElement('video');
+  control.probe = probe;
   probe.className = 'tabcloser-video-probe';
   probe.crossOrigin = 'anonymous';
   probe.muted = true;
   probe.preload = 'auto';
+  probe.playsInline = true;
+  probe.style.cssText = 'position:fixed;width:2px;height:2px;left:-10000px;top:-10000px;opacity:0;pointer-events:none';
+  activeDetachedVideoProbes.add(probe);
   probe.src = source;
   document.documentElement.appendChild(probe);
   try {
-    return await classifyVideoFrames(probe, keyPrefix, source);
+    if (probe.readyState < 1) await waitForEvent(probe, 'loadedmetadata', 'error', 4000);
+    const times = boundedDetachedVideoSampleTimes(probe.duration);
+    if (!times.length) throw new Error('detached video duration unavailable');
+    const mediaKey = TabCloserXMetadata.normalizeMediaUrl(source) || source;
+    for (const [index, time] of times.entries()) {
+      if (!probe.isConnected) throw new Error('detached video probe canceled');
+      await seekDetachedVideoProbe(probe, time);
+      if (!probe.isConnected) throw new Error('detached video probe canceled');
+      const imageData = pixelsFromDrawable(probe);
+      const result = await browser.runtime.sendMessage({
+        type: 'classifyXMedia',
+        kind: 'frame',
+        mediaKey: 'direct-video|' + mediaKey + '|t=' + time,
+        pixels: imageData.data,
+        width: imageData.width,
+        height: imageData.height,
+      });
+      if (result?.verdict === 'protect' && result.reason === 'visual') return { ...result, samplesChecked: index + 1 };
+    }
+    return { verdict: 'safe', reason: 'visual', samplesChecked: times.length };
   } finally {
-    probe.removeAttribute('src');
-    probe.load();
-    probe.remove();
+    disposeDetachedVideoProbe(probe);
   }
+}
+
+function classifyDirectVideoSource(source) {
+  const normalized = TabCloserXMetadata.normalizeMediaUrl(source) || source;
+  const cacheKey = settings.sensitivity + '|' + normalized;
+  const cached = directVideoVerdictCache.get(cacheKey);
+  if (cached) {
+    directVideoVerdictCache.delete(cacheKey);
+    directVideoVerdictCache.set(cacheKey, cached);
+    return Promise.resolve(cached);
+  }
+  const existing = directVideoProbeInFlight.get(cacheKey);
+  if (existing) return existing;
+
+  const control = { probe: null };
+  let timeout = null;
+  const timedOut = new Promise((_, reject) => {
+    timeout = setTimeout(() => {
+      disposeDetachedVideoProbe(control.probe);
+      reject(new Error('detached video probe timeout'));
+    }, 8000);
+  });
+  const job = Promise.race([sampleDetachedVideoSource(source, control), timedOut])
+    .then(result => {
+      directVideoVerdictCache.delete(cacheKey);
+      directVideoVerdictCache.set(cacheKey, result);
+      trimOldestMapEntries(directVideoVerdictCache);
+      return result;
+    })
+    .catch(() => ({ verdict: 'safe', reason: 'probe-unavailable', samplesChecked: 0 }))
+    .finally(() => {
+      if (timeout != null) clearTimeout(timeout);
+      if (directVideoProbeInFlight.get(cacheKey) === job) directVideoProbeInFlight.delete(cacheKey);
+      disposeDetachedVideoProbe(control.probe);
+    });
+  directVideoProbeInFlight.set(cacheKey, job);
+  return job;
+}
+
+async function classifyVideoPoster(video, keyPrefix, isActive) {
+  ensureClassificationActive(isActive);
+  const poster = video.poster;
+  if (!poster || !approvedXMediaUrl(poster)) return { verdict: 'safe', reason: 'visual' };
+  const normalized = TabCloserXMetadata.normalizeMediaUrl(poster) || poster;
+  let result;
+  try {
+    result = await classifyUrl(poster, keyPrefix + '|poster|' + normalized);
+  } catch {
+    ensureClassificationActive(isActive);
+    return { verdict: 'safe', reason: 'visual' };
+  }
+  ensureClassificationActive(isActive);
+  // Poster inference is a best-effort fallback behind X's post metadata. Only
+  // a confirmed visual verdict may block a video; classifier failures must not
+  // recreate a permanent "hidden until verified" state.
+  return result?.verdict === 'protect' && result.reason === 'visual'
+    ? result
+    : { verdict: 'safe', reason: 'visual' };
 }
 
 // A failed classification (image mid-load, cold classifier, fetch hiccup) must
@@ -450,7 +715,7 @@ function scheduleRetry(root) {
 // sibling is independently classified and stands on its own judgment, and a
 // false positive must not censor innocent neighbors. Failure verdicts
 // (couldn't check) are also root-scoped so a retry can release them. Only X's
-// own tweet-level label ('metadata') hides every media cell in the article.
+// own tweet-level label ('metadata') hides every media cell in that tweet layer.
 function protectUnsafeResult(root, reason) {
   if (reason === 'metadata') {
     protectGroup(root, reason);
@@ -461,7 +726,9 @@ function protectUnsafeResult(root, reason) {
 }
 
 async function classifyRoot(root, fingerprint, token) {
+  const isActive = () => mode === 'full' && root.isConnected && rootRecords.get(root)?.token === token;
   try {
+    ensureClassificationActive(isActive);
     if (metadataProtects(root)) {
       protectGroup(root, 'metadata');
       return;
@@ -473,22 +740,48 @@ async function classifyRoot(root, fingerprint, token) {
     if (!images.length && !videos.length) throw new Error('no classifiable media');
 
     for (const image of images) {
+      ensureClassificationActive(isActive);
       const result = await classifyImage(image, fingerprint);
-      if (result.verdict !== 'safe') {
-        protectUnsafeResult(root, result.reason || 'visual');
-        return;
-      }
-    }
-    for (const video of videos) {
-      const result = await withTimeout(classifyVideo(video, fingerprint), 20000, 'video preflight');
+      ensureClassificationActive(isActive);
       if (result.verdict !== 'safe') {
         protectUnsafeResult(root, result.reason || 'visual');
         return;
       }
     }
 
-    const current = rootRecords.get(root);
-    if (mode !== 'full' || !root.isConnected || current?.token !== token) return;
+    if (metadataProtects(root)) {
+      protectGroup(root, 'metadata');
+      return;
+    }
+    for (const video of videos) {
+      const result = await classifyVideoPoster(video, fingerprint, isActive);
+      ensureClassificationActive(isActive);
+      if (result.verdict !== 'safe') {
+        protectUnsafeResult(root, result.reason || 'visual');
+        return;
+      }
+    }
+    const directVideoSource = videos.length > 0
+      ? await directVideoSourceForRoot(root, true)
+      : null;
+    ensureClassificationActive(isActive);
+    if (directVideoSource) {
+      const result = await classifyDirectVideoSource(directVideoSource);
+      ensureClassificationActive(isActive);
+      xMetadataDebug('direct-video-verdict', {
+        statusId: statusIdFor(root),
+        verdict: result.verdict,
+        reason: result.reason,
+        samplesChecked: result.samplesChecked || 0,
+      });
+      if (result.verdict !== 'safe') {
+        protectUnsafeResult(root, result.reason || 'visual');
+        return;
+      }
+    }
+
+
+    ensureClassificationActive(isActive);
     if (rootFingerprint(root) !== fingerprint) {
       discoverRoot(root);
       return;
@@ -496,6 +789,20 @@ async function classifyRoot(root, fingerprint, token) {
     if (metadataProtects(root) || root.dataset.tabcloserMediaState === 'protected') {
       protectGroup(root, root.dataset.tabcloserMediaReason || 'metadata');
       return;
+    }
+    rememberVerifiedSafeMedia(root);
+    const pageStatusId = statusIdFromHref(location.pathname);
+    if (pageStatusId) {
+      const rootStatusId = statusIdFor(root);
+      xMetadataDebug('root-release', {
+        pageStatusId,
+        rootStatusId,
+        statusIdMatches: rootStatusId === pageStatusId,
+        rootKind: root.getAttribute?.('data-testid') || root.tagName?.toLowerCase() || null,
+        imageCount: images.length,
+        videoCount: videos.length,
+        knownSensitiveTweet: !!rootStatusId && sensitiveTweetIds.has(rootStatusId),
+      });
     }
     setRootState(root, 'safe', 'visual');
   } catch (error) {
@@ -505,12 +812,35 @@ async function classifyRoot(root, fingerprint, token) {
   }
 }
 
+const classificationQueue = [];
+const maxConcurrentClassifications = 2;
+let activeClassifications = 0;
+
+function drainClassificationQueue() {
+  while (mode === 'full' && activeClassifications < maxConcurrentClassifications && classificationQueue.length) {
+    const task = classificationQueue.shift();
+    const record = rootRecords.get(task.root);
+    if (!task.root.isConnected || record?.token !== task.token || record.status !== 'pending') continue;
+    record.status = 'classifying';
+    activeClassifications += 1;
+    classifyRoot(task.root, task.fingerprint, task.token).finally(() => {
+      activeClassifications -= 1;
+      setTimeout(drainClassificationQueue, 0);
+    });
+  }
+}
+
+function queueRootClassification(root, record) {
+  classificationQueue.push({ root, fingerprint: record.fingerprint, token: record.token });
+  drainClassificationQueue();
+}
+
 const intersectionObserver = new IntersectionObserver(entries => {
   for (const entry of entries) {
     if (!entry.isIntersecting || mode !== 'full') continue;
     intersectionObserver.unobserve(entry.target);
     const record = rootRecords.get(entry.target);
-    if (record?.status === 'pending') classifyRoot(entry.target, record.fingerprint, record.token);
+    if (record?.status === 'pending') queueRootClassification(entry.target, record);
   }
 }, { rootMargin: '300px 0px' });
 
@@ -524,6 +854,16 @@ function discoverRoot(root) {
   }
   const fingerprint = rootFingerprint(root);
   if (!fingerprint || fingerprint === 'none') return;
+  if (metadataProtects(root)) {
+    protectGroup(root, 'metadata');
+    return;
+  }
+  if (hasVerifiedSafeMedia(root)) {
+    const token = ++operationId;
+    rootRecords.set(root, { fingerprint, status: 'safe', token, retries: 0 });
+    setRootState(root, 'safe', 'visual');
+    return;
+  }
   const previous = rootRecords.get(root);
   const domState = root.dataset.tabcloserMediaState;
   if (previous?.fingerprint === fingerprint && previous.status !== 'stale' && domState) {
@@ -548,32 +888,125 @@ function discoverWithin(container) {
   for (const root of candidateRootsWithin(container)) discoverRoot(root);
 }
 
+const discoveryQueue = new Set();
+let discoveryTimer = null;
+
+function flushDiscoveryQueue() {
+  discoveryTimer = null;
+  if (mode === 'off') {
+    discoveryQueue.clear();
+    return;
+  }
+  const containers = [];
+  for (const container of discoveryQueue) {
+    if (!container?.isConnected || extensionOwnedElement(container)) continue;
+    if (containers.some(parent => parent.contains?.(container))) continue;
+    for (let index = containers.length - 1; index >= 0; index -= 1) {
+      if (container.contains?.(containers[index])) containers.splice(index, 1);
+    }
+    containers.push(container);
+  }
+  discoveryQueue.clear();
+  for (const container of containers) discoverWithin(container);
+}
+
+function queueDiscovery(container) {
+  if (mode === 'off' || !container?.isConnected || extensionOwnedElement(container)) return;
+  discoveryQueue.add(container);
+  if (discoveryTimer == null) discoveryTimer = setTimeout(flushDiscoveryQueue, 0);
+}
+
 function scanKnownRootsForMetadata() {
+  const roots = new Set();
+  const matchedRoots = [];
   document.querySelectorAll('[data-tabcloser-media-state], ' + mediaSelector).forEach(node => {
     const root = mediaRootFor(node) || node;
-    if (mode !== 'off' && metadataProtects(root)) protectGroup(root, 'metadata');
+    if (roots.has(root)) return;
+    roots.add(root);
+    if (mode !== 'off' && metadataProtects(root)) {
+      matchedRoots.push({
+        statusId: statusIdFor(root),
+        rootKind: root.getAttribute?.('data-testid') || root.tagName?.toLowerCase() || null,
+      });
+      protectGroup(root, 'metadata');
+    }
   });
+  return { rootsScanned: roots.size, matchedRoots: matchedRoots.slice(0, 20) };
 }
 
 function setProtection(config) {
   const modelEnabled = config?.model?.enabled === true;
   const labeledEnabled = modelEnabled || config?.labeled?.enabled === true || config?.enabled === true;
-  settings = { replaceText: config?.replaceText === true, blockLike: config?.blockLike === true };
+  settings = {
+    replaceText: config?.replaceText === true,
+    blockLike: config?.blockLike === true,
+    sensitivity: config?.model?.sensitivity || 'balanced',
+  };
   mode = modelEnabled ? 'full' : labeledEnabled ? 'labeled' : 'off';
   document.documentElement.dataset.tabcloserXProtection = mode;
+  xMetadataDebug('protection-state', {
+    diagnosticVersion: 'video-probe-v1',
+    mode,
+    labeledEnabled,
+    modelEnabled,
+  });
   operationId += 1;
   intersectionObserver.disconnect();
+  classificationQueue.length = 0;
+  discoveryQueue.clear();
+  verifiedSafeMediaKeys.clear();
+  if (discoveryTimer != null) {
+    clearTimeout(discoveryTimer);
+    discoveryTimer = null;
+  }
+  cancelDetachedVideoProbes();
+  directVideoVerdictCache.clear();
   clearAllStates();
   if (mode !== 'off') discoverWithin(document);
 }
 
+
+function requeueSafeRootsForDirectVideoSources(tweetIds) {
+  if (mode !== 'full' || !tweetIds.size) return;
+  const roots = new Set(candidateRootsWithin(document));
+  document.querySelectorAll('[data-tabcloser-media-state]').forEach(node => roots.add(mediaRootFor(node) || node));
+  for (const root of roots) {
+    const tweetId = statusIdFor(root);
+    if (!mediaElementsWithin(root, 'video').length) continue;
+    if (!tweetId || !tweetIds.has(tweetId)) continue;
+    const record = rootRecords.get(root);
+    if (root.dataset.tabcloserMediaState !== 'safe' && record?.status !== 'safe') continue;
+    const verificationKey = stableMediaVerificationKey(root);
+    if (verificationKey) verifiedSafeMediaKeys.delete(verificationKey);
+    if (record) rootRecords.set(root, { ...record, status: 'stale' });
+    discoverRoot(root);
+  }
+}
 function addSensitiveMetadata(metadata) {
+  const directVideoTweetIds = new Set();
+  for (const [tweetId, source] of Object.entries(metadata?.videoSourcesByTweetId || {})) {
+    if (rememberDirectVideoSource(tweetId, source)) directVideoTweetIds.add(String(tweetId));
+  }
   for (const url of metadata?.urls || []) {
     const normalized = TabCloserXMetadata.normalizeMediaUrl(url);
     if (normalized) sensitiveUrls.add(normalized);
   }
   for (const tweetId of metadata?.tweetIds || []) sensitiveTweetIds.add(String(tweetId));
-  if (mode !== 'off') scanKnownRootsForMetadata();
+  requeueSafeRootsForDirectVideoSources(directVideoTweetIds);
+  const scan = mode !== 'off'
+    ? scanKnownRootsForMetadata()
+    : { rootsScanned: 0, matchedRoots: [] };
+  const pageStatusId = statusIdFromHref(location.pathname);
+  if (pageStatusId) {
+    xMetadataDebug('metadata-applied', {
+      pageStatusId,
+      receivedTweetIds: [...(metadata?.tweetIds || [])].map(String).slice(0, 20),
+      receivedUrlCount: metadata?.urls?.length || 0,
+      receivedDirectVideoSourceCount: directVideoTweetIds.size,
+      pageTweetKnownSensitive: sensitiveTweetIds.has(pageStatusId),
+      ...scan,
+    });
+  }
 }
 
 function blockPendingOrProtectedActivation(event) {
@@ -633,22 +1066,25 @@ document.addEventListener('play', event => {
   // Full mode is fail-closed (only verified-safe may play); labeled mode only
   // stops media that X's label explicitly protected.
   const blocked = mode === 'full' ? rootState !== 'safe' : rootState === 'pending' || rootState === 'protected';
-  if (blocked) {
-    event.target.pause();
-    event.target.muted = true;
-  }
+  if (blocked) blockMediaPlayback(event.target);
 }, true);
 
 browser.runtime.onMessage.addListener(message => {
+  if (message?.type === 'tabCloserProtectionPing') {
+    return Promise.resolve({ version: xProtectionCoordinatorVersion });
+  }
   if (message?.type === 'xProtectionChanged') setProtection(message.xProtection);
   if (message?.type === 'xSensitiveMediaMetadata') addSensitiveMetadata(message.metadata);
+  if (message?.type === 'xSensitiveMediaDiagnostic') {
+    console.debug(xMetadataDebugPrefix, JSON.stringify(message.diagnostic));
+  }
 });
 
 new MutationObserver(mutations => {
   if (mode === 'off') return;
   for (const mutation of mutations) {
-    if (mutation.type === 'attributes') discoverRoot(mediaRootFor(mutation.target));
-    else for (const node of mutation.addedNodes) if (node instanceof Element) discoverWithin(node);
+    if (mutation.type === 'attributes') queueDiscovery(mediaRootFor(mutation.target));
+    else for (const node of mutation.addedNodes) if (node instanceof Element) queueDiscovery(node);
   }
 }).observe(document.documentElement, {
   childList: true,
@@ -659,4 +1095,7 @@ new MutationObserver(mutations => {
 
 browser.storage.local.get('xProtection')
   .then(data => setProtection(data.xProtection))
-  .catch(() => setProtection(null));
+  .catch(error => {
+    xMetadataDebug('protection-storage-error', { error: String(error?.message || error) });
+    setProtection(null);
+  });

@@ -20,13 +20,20 @@ function flush(window, turns = 8) {
   });
 }
 
-async function startCoordinator(html, { config, classify } = {}) {
+async function startCoordinator(html, {
+  config,
+  classify,
+  prepare,
+  url = 'https://x.com/search?q=test&src=typed_query&f=media',
+} = {}) {
   const dom = new JSDOM(html, {
-    url: 'https://x.com/search?q=test&src=typed_query&f=media',
+    url,
     runScripts: 'outside-only',
   });
   const { window } = dom;
   const classificationMessages = [];
+  const debugMessages = [];
+  window.console.debug = (...args) => debugMessages.push(args);
   let contentMessageListener = null;
 
   // jsdom deliberately omits layout/media playback. These shims model only
@@ -66,10 +73,12 @@ async function startCoordinator(html, { config, classify } = {}) {
   window.browser = {
     storage: {
       local: {
-        get: async () => ({ xProtection: config || {
-          labeled: { enabled: true },
-          model: { enabled: true, sensitivity: 'balanced' },
-        } }),
+        get: async () => ({
+          xProtection: config || {
+            labeled: { enabled: true },
+            model: { enabled: true, sensitivity: 'balanced' },
+          },
+        }),
       },
     },
     runtime: {
@@ -84,12 +93,14 @@ async function startCoordinator(html, { config, classify } = {}) {
     },
   };
 
+  prepare?.(window);
   window.eval(coordinator);
   await flush(window);
 
   return {
     classificationMessages,
     dom,
+    debugMessages,
     async sendContentMessage(message) {
       assert.ok(contentMessageListener, 'content-script message listener was not registered');
       contentMessageListener(message);
@@ -103,7 +114,7 @@ test('a native X mature-content warning tile is replaced and cannot open the pos
   const harness = await startCoordinator(`
     <main>
       <a id="warning-tile" href="/example/status/1234567890">
-        <div><span>Content warning: Adult Content</span></div>
+        <div><span>Warning: Nudity</span></div>
       </a>
     </main>
   `, {
@@ -118,6 +129,8 @@ test('a native X mature-content warning tile is replaced and cannot open the pos
     assert.equal(tile.dataset.tabcloserMediaState, 'protected');
     assert.equal(tile.dataset.tabcloserMediaReason, 'metadata');
     assert.ok(tile.querySelector('.tabcloser-media-overlay-art'), 'warning tile should show replacement art');
+    assert.ok(tile.querySelector('.tabcloser-overlay-artwork'), 'the full painting should render above its fill backdrop');
+    assert.ok(tile.classList.contains('tabcloser-overlay-host-static'), 'a genuinely static host needs the positioning fallback');
 
     const click = new harness.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
     assert.equal(tile.dispatchEvent(click), false, 'protected warning tile navigation must be canceled');
@@ -127,7 +140,7 @@ test('a native X mature-content warning tile is replaced and cannot open the pos
   }
 });
 
-test('a blob-streamed video samples later frames instead of trusting a safe poster', async () => {
+test('a blob-streamed video uses its poster without sampling or seeking the player', async () => {
   const harness = await startCoordinator(`
     <article>
       <a href="/example/status/9876543210/video/1">
@@ -138,43 +151,791 @@ test('a blob-streamed video samples later frames instead of trusting a safe post
       </a>
     </article>
   `, {
-    classify(message) {
-      if (message.kind === 'url') return { verdict: 'safe', reason: 'visual' };
-      const time = Number(message.mediaKey.match(/\|t=([\d.]+)$/)?.[1] || 0);
-      return time >= 5
-        ? { verdict: 'protect', reason: 'visual' }
-        : { verdict: 'safe', reason: 'visual' };
+    prepare(window) {
+      const video = window.document.getElementById('video');
+      let currentTime = 7;
+      window.__videoSeekCount = 0;
+      Object.defineProperty(video, 'currentTime', {
+        configurable: true,
+        get: () => currentTime,
+        set(value) {
+          window.__videoSeekCount += 1;
+          currentTime = Number(value);
+        },
+      });
+      video.muted = false;
     },
   });
 
   try {
     const video = harness.window.document.getElementById('video');
-    let currentTime = 0;
-    Object.defineProperties(video, {
-      currentSrc: { configurable: true, get: () => video.src },
-      currentTime: {
-        configurable: true,
-        get: () => currentTime,
-        set(value) {
-          currentTime = Number(value);
-          harness.window.queueMicrotask(() => video.dispatchEvent(new harness.window.Event('seeked')));
+    const videoRoot = harness.window.document.getElementById('video-root');
+    assert.equal(videoRoot.dataset.tabcloserMediaState, 'safe');
+    assert.equal(videoRoot.dataset.tabcloserMediaReason, 'visual');
+    assert.deepEqual(harness.classificationMessages.map(message => message.kind), ['url']);
+    assert.equal(harness.window.__videoSeekCount, 0);
+    assert.equal(video.currentTime, 7);
+    assert.equal(video.muted, false);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+function configureFixtureVideo(window, video, source = '') {
+  let currentTime = 0;
+  Object.defineProperties(video, {
+    currentSrc: { configurable: true, get: () => source },
+    currentTime: {
+      configurable: true,
+      get: () => currentTime,
+      set(value) {
+        currentTime = Number(value);
+        window.queueMicrotask(() => video.dispatchEvent(new window.Event('seeked')));
+      },
+    },
+    duration: { configurable: true, get: () => 20 },
+    readyState: { configurable: true, get: () => 4 },
+    buffered: {
+      configurable: true,
+      get: () => ({ length: 1, start: () => 0, end: () => 20 }),
+    },
+  });
+}
+
+function laterFrameClassifier(message) {
+  if (message.kind === 'url') return { verdict: 'safe', reason: 'visual' };
+  const time = Number(message.mediaKey.match(/\|t=([\d.]+)$/)?.[1] || 0);
+  return time >= 5
+    ? { verdict: 'protect', reason: 'visual' }
+    : { verdict: 'safe', reason: 'visual' };
+}
+
+test('a generic status-link video tile in media search is released after poster classification', async () => {
+  const harness = await startCoordinator(
+    '<main>' +
+      '<a id="video-tile" href="/example/status/2222222222">' +
+        '<img src="https://pbs.twimg.com/amplify_video_thumb/222/img/poster.jpg">' +
+        '<video id="grid-video"></video>' +
+      '</a>' +
+    '</main>',
+    {
+      prepare(window) {
+        configureFixtureVideo(window, window.document.getElementById('grid-video'), 'blob:https://x.com/grid-video');
+      },
+      classify: laterFrameClassifier,
+    },
+  );
+
+  try {
+    const tile = harness.window.document.getElementById('video-tile');
+    assert.equal(tile.dataset.tabcloserMediaState, 'safe');
+    assert.equal(harness.classificationMessages.some(message => message.kind === 'frame'), false);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a safe poster-only X video thumbnail is released without waiting for a player', async () => {
+  const harness = await startCoordinator(
+    '<main><a id="poster-tile" href="/example/status/2233333333">' +
+      '<img src="https://pbs.twimg.com/amplify_video_thumb/223/img/poster.jpg">' +
+    '</a></main>',
+    { classify: () => ({ verdict: 'safe', reason: 'visual' }) },
+  );
+
+  try {
+    await harness.sendContentMessage({
+      type: 'xSensitiveMediaMetadata',
+      metadata: {
+        urls: [],
+        tweetIds: [],
+        videoSourcesByTweetId: {
+          '2233333333': 'https://video.twimg.com/amplify_video/223/vid/low.mp4',
         },
       },
-      duration: { configurable: true, get: () => 20 },
-      readyState: { configurable: true, get: () => 4 },
     });
+    const tile = harness.window.document.getElementById('poster-tile');
+    assert.equal(tile.dataset.tabcloserMediaState, 'safe');
+    assert.equal(tile.dataset.tabcloserMediaReason, 'visual');
+    assert.deepEqual(harness.classificationMessages.map(message => message.kind), ['url']);
+  } finally {
+    harness.dom.window.close();
+  }
+});
 
-    // The initial asynchronous scan may have run before the media shims above;
-    // rediscovery models X updating a video element after mounting it.
-    video.setAttribute('poster', video.poster.replace('poster.jpg', 'poster-rediscovered.jpg'));
+test('a mature video poster still protects an otherwise unlabeled video', async () => {
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/2244444445/video/1">' +
+      '<div id="mature-poster-root" data-testid="videoComponent">' +
+        '<video poster="https://pbs.twimg.com/amplify_video_thumb/224/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    { classify: () => ({ verdict: 'protect', reason: 'visual' }) },
+  );
+
+  try {
+    const root = harness.window.document.getElementById('mature-poster-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    assert.deepEqual(harness.classificationMessages.map(message => message.kind), ['url']);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a VPN-unlabeled blob video checks bounded detached frames without seeking the visible player', async () => {
+  const tweetId = '2077422949787959667';
+  const directSource = 'https://video.twimg.com/amplify_video/207742/vid/low.mp4?tag=14';
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/' + tweetId + '/video/1">' +
+      '<div id="vpn-video-root" data-testid="videoComponent">' +
+        '<video id="vpn-visible-video" poster="https://pbs.twimg.com/amplify_video_thumb/207742/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    {
+      url: 'https://x.com/example/status/' + tweetId,
+      prepare(window) {
+        const visibleVideo = window.document.getElementById('vpn-visible-video');
+        let visibleTime = 7;
+        window.__visibleSeekCount = 0;
+        Object.defineProperties(visibleVideo, {
+          currentSrc: { configurable: true, get: () => 'blob:https://x.com/vpn-visible-video' },
+          currentTime: {
+            configurable: true,
+            get: () => visibleTime,
+            set(value) {
+              window.__visibleSeekCount += 1;
+              visibleTime = Number(value);
+            },
+          },
+        });
+
+        const createElement = window.document.createElement.bind(window.document);
+        window.document.createElement = function createElementWithVideoProbe(tagName, options) {
+          const element = createElement(tagName, options);
+          if (String(tagName).toLowerCase() === 'video') configureFixtureVideo(window, element, directSource);
+          return element;
+        };
+      },
+      classify(message) {
+        if (message.kind === 'url') return { verdict: 'safe', reason: 'visual' };
+        const time = Number(message.mediaKey.match(/\|t=([\d.]+)$/)?.[1] || 0);
+        return time >= 5
+          ? { verdict: 'protect', reason: 'visual' }
+          : { verdict: 'safe', reason: 'visual' };
+      },
+    },
+  );
+
+  try {
+    await harness.sendContentMessage({
+      type: 'xSensitiveMediaMetadata',
+      metadata: {
+        urls: [],
+        tweetIds: [],
+        videoSourcesByTweetId: { [tweetId]: directSource },
+      },
+    });
+    await flush(harness.window, 24);
+
+    const root = harness.window.document.getElementById('vpn-video-root');
+    const visibleVideo = harness.window.document.getElementById('vpn-visible-video');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    assert.deepEqual(harness.classificationMessages.map(message => message.kind), ['url', 'frame', 'frame']);
+    assert.equal(harness.window.__visibleSeekCount, 0);
+    assert.equal(visibleVideo.currentTime, 7);
+    assert.equal(harness.window.document.querySelector('.tabcloser-video-probe'), null,
+      'the detached probe must always be removed');
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+
+test('a failed detached video probe is removed and cannot leave media hidden forever', async () => {
+  const tweetId = '2077422949787959668';
+  const directSource = 'https://video.twimg.com/amplify_video/207742/vid/unavailable.mp4?tag=14';
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/' + tweetId + '/video/1">' +
+      '<div id="failed-probe-root" data-testid="videoComponent">' +
+        '<video poster="https://pbs.twimg.com/amplify_video_thumb/207742/img/safe-poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    {
+      url: 'https://x.com/example/status/' + tweetId,
+      prepare(window) {
+        const appendChild = window.document.documentElement.appendChild.bind(window.document.documentElement);
+        window.document.documentElement.appendChild = function appendWithProbeFailure(node) {
+          const result = appendChild(node);
+          if (node.classList?.contains('tabcloser-video-probe')) {
+            window.queueMicrotask(() => node.dispatchEvent(new window.Event('error')));
+          }
+          return result;
+        };
+      },
+      classify: () => ({ verdict: 'safe', reason: 'visual' }),
+    },
+  );
+
+  try {
+    await harness.sendContentMessage({
+      type: 'xSensitiveMediaMetadata',
+      metadata: {
+        urls: [],
+        tweetIds: [],
+        videoSourcesByTweetId: { [tweetId]: directSource },
+      },
+    });
+    await flush(harness.window, 20);
+
+    const root = harness.window.document.getElementById('failed-probe-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    assert.equal(harness.window.document.querySelector('.tabcloser-video-probe'), null);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('an invalid poster verdict does not permanently hide an unlabeled video', async () => {
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/2244444446/video/1">' +
+      '<div id="invalid-poster-root" data-testid="videoComponent">' +
+        '<video poster="https://pbs.twimg.com/amplify_video_thumb/225/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    { classify: () => ({ verdict: 'protect', reason: 'invalid' }) },
+  );
+
+  try {
+    const root = harness.window.document.getElementById('invalid-poster-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+  } finally {
+    harness.dom.window.close();
+  }
+});
+test('mounting a source-less video does not trigger frame classification', async () => {
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/3333333333">' +
+      '<div id="late-video-root" data-testid="videoComponent">' +
+        '<img src="https://pbs.twimg.com/amplify_video_thumb/333/img/poster.jpg">' +
+      '</div>' +
+    '</a></article>',
+    { classify: laterFrameClassifier },
+  );
+
+  try {
+    const root = harness.window.document.getElementById('late-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+
+    const video = harness.window.document.createElement('video');
+    configureFixtureVideo(harness.window, video);
+    root.appendChild(video);
     await flush(harness.window, 16);
 
-    const videoRoot = harness.window.document.getElementById('video-root');
-    assert.equal(videoRoot.dataset.tabcloserMediaState, 'protected');
-    assert.equal(videoRoot.dataset.tabcloserMediaReason, 'visual');
-    assert.ok(
-      harness.classificationMessages.some(message => message.kind === 'frame' && /\|t=(?:5|10|15|19)/.test(message.mediaKey)),
-      'classification should inspect a frame after the poster/first frame',
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    assert.equal(harness.classificationMessages.some(message => message.kind === 'frame'), false);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+
+test('outer tweet metadata does not censor a safe quoted tweet in the same article', async () => {
+  const harness = await startCoordinator(`
+    <article>
+      <a href="/outer/status/5555555555/photo/1">
+        <div id="outer-root" data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/outer.jpg"></div>
+      </a>
+      <div id="quoted-card" role="link">
+        <div id="quoted-text" data-testid="tweetText">A safe quoted post</div>
+        <a href="/quoted/status/6666666666/photo/1">
+          <div id="quoted-root" data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/quoted.jpg"></div>
+        </a>
+      </div>
+    </article>
+  `, {
+    config: {
+      labeled: { enabled: true },
+      model: { enabled: true, sensitivity: 'balanced' },
+      replaceText: true,
+    },
+    prepare(window) {
+      window.TabCloserQuotes = [{ text: 'Replacement', author: 'Author' }];
+    },
+  });
+
+  try {
+    await harness.sendContentMessage({
+      type: 'xSensitiveMediaMetadata',
+      metadata: { urls: [], tweetIds: ['5555555555'] },
+    });
+
+    const outer = harness.window.document.getElementById('outer-root');
+    const quoted = harness.window.document.getElementById('quoted-root');
+    const quotedText = harness.window.document.getElementById('quoted-text');
+    assert.equal(outer.dataset.tabcloserMediaState, 'protected');
+    assert.equal(quoted.dataset.tabcloserMediaState, 'safe', 'nested quoted media belongs to a separate tweet layer');
+    assert.equal(quotedText.dataset.tabcloserQuoted, undefined);
+    assert.equal(quotedText.classList.contains('tabcloser-hidden-text'), false);
+    assert.equal(harness.window.document.querySelector('.tabcloser-quote'), null);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('turning protection off cancels an in-flight video-poster classification', async () => {
+  const posterResolvers = [];
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/7777777777/video/1">' +
+      '<div id="cancel-root" data-testid="videoComponent"><video id="cancel-video" poster="https://pbs.twimg.com/amplify_video_thumb/777/img/poster.jpg"></video></div>' +
+    '</a></article>',
+    {
+      prepare(window) {
+        configureFixtureVideo(window, window.document.getElementById('cancel-video'));
+      },
+      classify() {
+        return new Promise(resolve => { posterResolvers.push(resolve); });
+      },
+    },
+  );
+
+  try {
+    const inFlightCount = harness.classificationMessages.length;
+    assert.ok(inFlightCount > 0, 'the poster should be awaiting a verdict');
+    await harness.sendContentMessage({
+      type: 'xProtectionChanged',
+      xProtection: {
+        labeled: { enabled: false },
+        model: { enabled: false, sensitivity: 'balanced' },
+      },
+    });
+    for (const resolve of [...posterResolvers]) resolve({ verdict: 'safe', reason: 'visual' });
+    await flush(harness.window, 12);
+
+    const root = harness.window.document.getElementById('cancel-root');
+    assert.equal(harness.window.document.documentElement.dataset.tabcloserXProtection, 'off');
+    assert.equal(root.dataset.tabcloserMediaState, undefined, 'turning protection off must clear the media state');
+    assert.equal(harness.classificationMessages.length, inFlightCount, 'no further poster work may start after protection is disabled');
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('visibility-only TweetDetail metadata protects the current detail video', async () => {
+  const harness = await startCoordinator(
+
+    '<div id="modal-video-root" data-testid="videoComponent">' +
+      '<img src="https://pbs.twimg.com/amplify_video_thumb/444/img/poster.jpg">' +
+    '</div>',
+    { url: 'https://x.com/example/status/4444444444/video/1' },
+  );
+
+  try {
+    const root = harness.window.document.getElementById('modal-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    const extracted = metadata.extractSensitiveMedia({
+      data: {
+        result: {
+          __typename: 'TweetWithVisibilityResults',
+          tweet: {
+            rest_id: '4444444444',
+            legacy: { possibly_sensitive: true },
+          },
+          limitedActionResults: { limited_actions: [{ action: 'DoNotAllow' }] },
+        },
+      },
+    });
+    await harness.sendContentMessage({
+      type: 'xSensitiveMediaMetadata',
+      metadata: extracted,
+    });
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.ok(harness.debugMessages.some(([, serialized]) => {
+      const diagnostic = JSON.parse(serialized);
+      return diagnostic?.event === 'metadata-applied' &&
+        diagnostic.pageStatusId === '4444444444' &&
+        diagnostic.pageTweetKnownSensitive === true &&
+        diagnostic.matchedRoots.some(match => match.statusId === '4444444444');
+    }));
+    assert.equal(root.dataset.tabcloserMediaReason, 'metadata');
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('nested X media roots are classified once instead of again through their status link', async () => {
+  const harness = await startCoordinator(
+    '<main><a href="/example/status/2211111111">' +
+      '<div id="single-root" data-testid="tweetPhoto">' +
+        '<img src="https://pbs.twimg.com/media/single.jpg">' +
+      '</div>' +
+    '</a></main>',
+  );
+
+  try {
+    assert.equal(harness.window.document.getElementById('single-root').dataset.tabcloserMediaState, 'safe');
+    assert.equal(harness.classificationMessages.length, 1, 'the containing status link must not become a duplicate root');
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('replacement artwork never becomes a media root or classifier input', async () => {
+  const harness = await startCoordinator(
+    '<main><a href="/example/status/2244444444/photo/1">' +
+      '<div id="painted-root" data-testid="tweetPhoto">' +
+        '<img src="https://pbs.twimg.com/media/protected.jpg">' +
+      '</div>' +
+    '</a></main>',
+    { classify: () => ({ verdict: 'protect', reason: 'visual' }) },
+  );
+
+  try {
+    await flush(harness.window, 20);
+    const root = harness.window.document.getElementById('painted-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.ok(root.closest('a').querySelector('.tabcloser-overlay-artwork'));
+    assert.equal(harness.classificationMessages.length, 1, 'adding replacement art must not requeue the protected tile');
+    assert.equal(
+      harness.classificationMessages.some(message => String(message.url || '').startsWith('moz-extension:')),
+      false,
+      'extension-owned artwork must never be classified',
+    );
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('an absolutely positioned X grid anchor keeps its positioning', async () => {
+  const harness = await startCoordinator(
+    '<div style="position:relative;padding-bottom:100%">' +
+      '<a id="absolute-tile" style="position:absolute;inset:0" href="/example/status/2255555555">' +
+        '<span>Warning: Nudity</span>' +
+      '</a>' +
+    '</div>',
+    {
+      config: {
+        labeled: { enabled: true },
+        model: { enabled: false, sensitivity: 'balanced' },
+      },
+    },
+  );
+
+  try {
+    const tile = harness.window.document.getElementById('absolute-tile');
+    assert.ok(tile.classList.contains('tabcloser-overlay-host'));
+    assert.equal(tile.classList.contains('tabcloser-overlay-host-static'), false);
+    assert.equal(harness.window.getComputedStyle(tile).position, 'absolute');
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('video poster classification does not depend on buffered ranges', async () => {
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/2266666666/video/1">' +
+      '<div id="buffered-root" data-testid="videoComponent">' +
+        '<video id="buffered-video" poster="https://pbs.twimg.com/amplify_video_thumb/226/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    {
+      prepare(window) {
+        const video = window.document.getElementById('buffered-video');
+        configureFixtureVideo(window, video, 'blob:https://x.com/slow-vpn-video');
+        Object.defineProperty(video, 'buffered', {
+          configurable: true,
+          get: () => ({ length: 1, start: () => 0, end: () => 1 }),
+        });
+      },
+    },
+  );
+
+  try {
+    const root = harness.window.document.getElementById('buffered-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    assert.equal(
+      harness.classificationMessages.some(message => /\|t=(?:5|10|15|19)/.test(message.mediaKey || '')),
+      false,
+      'classification must not trigger remote segment loads by seeking beyond the buffer',
+    );
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('replacement artwork stays stable while X changes the media source', async () => {
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/2277777777/photo/1">' +
+      '<div id="stable-art-root" data-testid="tweetPhoto">' +
+        '<img id="stable-art-image" src="https://pbs.twimg.com/media/source-0.jpg">' +
+      '</div>' +
+    '</a></article>',
+    {
+      prepare(window) {
+        window.TabCloserSacredArt = Array.from({ length: 97 }, (_, index) => 'painting-' + index + '.jpg');
+      },
+      classify: () => ({ verdict: 'protect', reason: 'visual' }),
+    },
+  );
+
+  try {
+    await flush(harness.window, 20);
+    const root = harness.window.document.getElementById('stable-art-root');
+    const image = harness.window.document.getElementById('stable-art-image');
+    const host = root.closest('a');
+    const firstArtwork = host.querySelector('.tabcloser-overlay-artwork')?.style.backgroundImage;
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    assert.ok(firstArtwork);
+
+    for (let index = 1; index <= 3; index += 1) {
+      image.src = 'https://pbs.twimg.com/media/source-' + index + '.jpg';
+      await flush(harness.window, 16);
+      assert.equal(root.dataset.tabcloserMediaState, 'protected');
+      assert.equal(host.querySelector('.tabcloser-overlay-artwork')?.style.backgroundImage, firstArtwork);
+    }
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('buffer growth does not reclassify a verified video poster', async () => {
+  let bufferedEnd = 1;
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/2288888888/video/1">' +
+      '<div id="progress-root" data-testid="videoComponent">' +
+        '<video id="progress-video" poster="https://pbs.twimg.com/amplify_video_thumb/228/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    {
+      prepare(window) {
+        const video = window.document.getElementById('progress-video');
+        configureFixtureVideo(window, video, 'blob:https://x.com/progressive-vpn-video');
+        Object.defineProperty(video, 'buffered', {
+          configurable: true,
+          get: () => ({ length: 1, start: () => 0, end: () => bufferedEnd }),
+        });
+      },
+      classify: laterFrameClassifier,
+    },
+  );
+
+  try {
+    const root = harness.window.document.getElementById('progress-root');
+    const video = harness.window.document.getElementById('progress-video');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    const classificationsBeforeGrowth = harness.classificationMessages.length;
+
+    bufferedEnd = 20;
+    video.dispatchEvent(new harness.window.Event('progress'));
+    await new Promise(resolve => harness.window.setTimeout(resolve, 150));
+    await flush(harness.window, 24);
+
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    assert.equal(harness.classificationMessages.length, classificationsBeforeGrowth);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('MediaSource buffer growth without an event does not reclassify a verified poster', async () => {
+  let bufferedEnd = 1;
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/2299999999/video/1">' +
+      '<div id="eventless-root" data-testid="videoComponent">' +
+        '<video id="eventless-video" poster="https://pbs.twimg.com/amplify_video_thumb/229/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    {
+      prepare(window) {
+        const video = window.document.getElementById('eventless-video');
+        configureFixtureVideo(window, video, 'blob:https://x.com/eventless-mediasource-video');
+        Object.defineProperty(video, 'buffered', {
+          configurable: true,
+          get: () => ({ length: 1, start: () => 0, end: () => bufferedEnd }),
+        });
+      },
+    },
+  );
+
+  try {
+    const root = harness.window.document.getElementById('eventless-root');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    const classificationsBeforeGrowth = harness.classificationMessages.length;
+
+    bufferedEnd = 20;
+    await new Promise(resolve => harness.window.setTimeout(resolve, 400));
+    await flush(harness.window, 24);
+
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    assert.equal(harness.classificationMessages.length, classificationsBeforeGrowth);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a safe blob video is released only after its time and mute state are restored', async () => {
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/2300000000/video/1">' +
+      '<div id="restore-root" data-testid="videoComponent">' +
+        '<video id="restore-video" poster="https://pbs.twimg.com/amplify_video_thumb/230/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    {
+      prepare(window) {
+        const root = window.document.getElementById('restore-root');
+        const video = window.document.getElementById('restore-video');
+        let currentTime = 0;
+        Object.defineProperties(video, {
+          currentSrc: { configurable: true, get: () => 'blob:https://x.com/restore-video' },
+          currentTime: {
+            configurable: true,
+            get: () => currentTime,
+            set(value) {
+              const nextTime = Number(value);
+              const delay = nextTime === 0 && currentTime > 0 ? 50 : 0;
+              window.setTimeout(() => {
+                currentTime = nextTime;
+                video.dispatchEvent(new window.Event('seeked'));
+              }, delay);
+            },
+          },
+          duration: { configurable: true, get: () => 20 },
+          readyState: { configurable: true, get: () => 4 },
+          buffered: {
+            configurable: true,
+            get: () => ({ length: 1, start: () => 0, end: () => 20 }),
+          },
+        });
+        video.muted = false;
+        window.__safePlaybackSnapshot = null;
+        new window.MutationObserver(() => {
+          if (root.dataset.tabcloserMediaState === 'safe' && !window.__safePlaybackSnapshot) {
+            window.__safePlaybackSnapshot = { currentTime: video.currentTime, muted: video.muted };
+          }
+        }).observe(root, { attributes: true, attributeFilter: ['data-tabcloser-media-state'] });
+      },
+    },
+  );
+
+  try {
+    const root = harness.window.document.getElementById('restore-root');
+    await new Promise(resolve => harness.window.setTimeout(resolve, 100));
+    await flush(harness.window, 20);
+
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    assert.deepEqual(harness.window.__safePlaybackSnapshot, { currentTime: 0, muted: false });
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a fully verified detail video stays safe when X remounts its timeline poster', async () => {
+  const poster = 'https://pbs.twimg.com/amplify_video_thumb/231/img/poster.jpg';
+  const harness = await startCoordinator(
+    '<main id="route"><article><a href="/example/status/2311111111/video/1">' +
+      '<div id="detail-root" data-testid="videoComponent">' +
+        '<video id="detail-video" poster="' + poster + '"></video>' +
+      '</div>' +
+    '</a></article></main>',
+    {
+      prepare(window) {
+        configureFixtureVideo(
+          window,
+          window.document.getElementById('detail-video'),
+          'blob:https://x.com/detail-safe-video',
+        );
+      },
+    },
+  );
+
+  try {
+    assert.equal(harness.window.document.getElementById('detail-root').dataset.tabcloserMediaState, 'safe');
+    const classificationsBeforeRemount = harness.classificationMessages.length;
+    const route = harness.window.document.getElementById('route');
+    route.innerHTML =
+      '<article><a href="/example/status/2311111111">' +
+        '<div id="timeline-root" data-testid="tweetPhoto">' +
+          '<img src="' + poster + '">' +
+        '</div>' +
+      '</a></article>';
+    await flush(harness.window, 24);
+
+    const timelineRoot = harness.window.document.getElementById('timeline-root');
+    assert.equal(timelineRoot.dataset.tabcloserMediaState, 'safe');
+    assert.equal(timelineRoot.dataset.tabcloserMediaReason, 'visual');
+    assert.equal(
+      harness.classificationMessages.length,
+      classificationsBeforeRemount,
+      'the same stable video poster must reuse the completed detail verification',
+    );
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('poster verification never seeks an HLS video to expand its buffer', async () => {
+  let currentTime = 0;
+  let bufferedEnd = 18;
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/2322222222/video/1">' +
+      '<div id="windowed-root" data-testid="videoComponent">' +
+        '<video id="windowed-video" poster="https://pbs.twimg.com/amplify_video_thumb/232/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    {
+      prepare(window) {
+        const video = window.document.getElementById('windowed-video');
+        Object.defineProperties(video, {
+          currentSrc: { configurable: true, get: () => 'blob:https://x.com/windowed-hls-video' },
+          currentTime: {
+            configurable: true,
+            get: () => currentTime,
+            set(value) {
+              const nextTime = Number(value);
+              currentTime = nextTime;
+              window.queueMicrotask(() => video.dispatchEvent(new window.Event('seeked')));
+              if (nextTime < 15) return;
+              window.setTimeout(() => {
+                if (currentTime >= nextTime - 0.02) {
+                  bufferedEnd = Math.max(bufferedEnd, Math.min(60, nextTime + 18));
+                }
+              }, 50);
+            },
+          },
+          duration: { configurable: true, get: () => 60 },
+          readyState: { configurable: true, get: () => 4 },
+          buffered: {
+            configurable: true,
+            get: () => ({ length: 1, start: () => 0, end: () => bufferedEnd }),
+          },
+        });
+        video.muted = false;
+      },
+    },
+  );
+
+  try {
+    const root = harness.window.document.getElementById('windowed-root');
+    const video = harness.window.document.getElementById('windowed-video');
+    await new Promise(resolve => harness.window.setTimeout(resolve, 1200));
+    await flush(harness.window, 24);
+
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    assert.equal(currentTime, 0, 'the original playback position must be restored after the final verdict');
+    assert.equal(video.muted, false, 'the original mute state must be restored after the final verdict');
+    assert.equal(
+      harness.classificationMessages.some(message => message.kind === 'frame'),
+      false,
+      'video playback frames must never be sampled',
     );
   } finally {
     harness.dom.window.close();
