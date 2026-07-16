@@ -731,6 +731,10 @@ const escalationBandFraction = 0.5;
 // over-scores skin/face closeups. Only frames whose squashed score already
 // shows suspicion earn the crop pass.
 const cropGateFraction = 0.25;
+// A single frame at 2x the threshold protects on its own; a marginal frame
+// (between 1x and 2x) is one noisy sample away from a false positive and
+// needs a second frame in the escalation band to corroborate it.
+const strongProtectFraction = 2;
 
 function boundedDetachedVideoSampleTimes(duration) {
   return detachedVideoSampleTimes(duration, baseSampleFractions);
@@ -784,8 +788,10 @@ async function sampleDetachedVideoSource(source, control) {
     const meanThreshold = threshold * meanThresholdFraction;
     const escalationBand = threshold * escalationBandFraction;
     const cropGate = threshold * cropGateFraction;
+    const strongThreshold = threshold * strongProtectFraction;
     const scores = [];
     const frameDetails = [];
+    let marginalProtect = null;
 
     const round = value => Math.round(value * 1000) / 1000;
     const aggregates = () => ({
@@ -829,12 +835,19 @@ async function sampleDetachedVideoSource(source, control) {
           squash: round(squashScore),
           crop: cropScore == null ? null : round(cropScore),
         });
+        const decided = fields => ({ samplesChecked: scores.length, promote: true, frames: frameDetails, ...aggregates(), ...fields });
         if (matureVerdict(result)) {
-          return { ...result, samplesChecked: scores.length, aggregate: 'max', frames: frameDetails, ...aggregates() };
+          // A single strong frame is decisive; a marginal one waits for a
+          // second suspicious frame before it may protect.
+          if (frameScore >= strongThreshold) return { ...result, ...decided({ aggregate: 'max' }) };
+          marginalProtect = marginalProtect || result;
+        }
+        if (marginalProtect && scores.filter(score => score >= escalationBand).length >= 2) {
+          return { ...marginalProtect, ...decided({ aggregate: 'confirmed' }) };
         }
         const { meanAdultScore } = aggregates();
-        if (scores.length >= 2 && meanAdultScore >= meanThreshold) {
-          return { verdict: 'protect', reason: 'visual', samplesChecked: scores.length, aggregate: 'mean', frames: frameDetails, ...aggregates() };
+        if (scores.length >= 3 && meanAdultScore >= meanThreshold) {
+          return { verdict: 'protect', reason: 'visual', ...decided({ aggregate: 'mean' }) };
         }
       }
       return null;
@@ -848,6 +861,19 @@ async function sampleDetachedVideoSource(source, control) {
         .filter(time => !baseTimes.includes(time));
       const escalatedVerdict = await classifyFrames(extraTimes);
       if (escalatedVerdict) return escalatedVerdict;
+    }
+    if (marginalProtect) {
+      // Every other frame stayed clean: likely one noisy sample. Censor the
+      // mounted player (fail-closed) but do not promote the verdict to the
+      // session set, so other surfaces of this tweet get a fresh look.
+      return {
+        ...marginalProtect,
+        samplesChecked: scores.length,
+        aggregate: 'max-unconfirmed',
+        promote: false,
+        frames: frameDetails,
+        ...aggregates(),
+      };
     }
     return { verdict: 'safe', reason: 'visual', samplesChecked: scores.length, frames: frameDetails, ...aggregates() };
   } finally {
@@ -1011,15 +1037,18 @@ async function classifyRoot(root, fingerprint, token) {
         aggregate: result.aggregate || null,
         maxAdultScore: result.maxAdultScore ?? null,
         meanAdultScore: result.meanAdultScore ?? null,
+        promoted: result.verdict !== 'safe' && result.promote !== false,
         frames: result.frames || null,
       });
       if (result.verdict !== 'safe') {
         // Direct-video verdicts are tweet-level: remember the ID so remounted
         // media (Media tab thumbnail, re-rendered detail view) is protected
         // without a second probe, and protect the whole tweet layer so the
-        // post text is replaced along with the media.
+        // post text is replaced along with the media. Unconfirmed marginal
+        // verdicts stay local to this mount: they censor here but never enter
+        // the session set.
         if (result.reason === 'visual') {
-          rememberVisuallyProtectedTweet(statusIdFor(root));
+          if (result.promote !== false) rememberVisuallyProtectedTweet(statusIdFor(root));
           protectGroup(root, 'visual');
         } else {
           protectUnsafeResult(root, result.reason || 'visual');

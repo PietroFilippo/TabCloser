@@ -222,11 +222,12 @@ function configureFixtureVideo(window, video, source = '') {
 }
 
 function laterFrameClassifier(message) {
-  if (message.kind === 'url') return { verdict: 'safe', reason: 'visual' };
+  if (message.kind === 'url') return { verdict: 'safe', reason: 'visual', adultScore: 0.01 };
   const time = Number(message.mediaKey.match(/\|t=([\d.]+)$/)?.[1] || 0);
+  // A strong score (>= 2x threshold): decisive on its own.
   return time >= 5
-    ? { verdict: 'protect', reason: 'visual' }
-    : { verdict: 'safe', reason: 'visual' };
+    ? { verdict: 'protect', reason: 'visual', adultScore: 0.5 }
+    : { verdict: 'safe', reason: 'visual', adultScore: 0.02 };
 }
 
 test('a generic status-link video tile in media search is released after poster classification', async () => {
@@ -337,11 +338,11 @@ test('a VPN-unlabeled blob video checks bounded detached frames without seeking 
         };
       },
       classify(message) {
-        if (message.kind === 'url') return { verdict: 'safe', reason: 'visual' };
+        if (message.kind === 'url') return { verdict: 'safe', reason: 'visual', adultScore: 0.01 };
         const time = Number(message.mediaKey.match(/\|t=([\d.]+)$/)?.[1] || 0);
         return time >= 5
-          ? { verdict: 'protect', reason: 'visual' }
-          : { verdict: 'safe', reason: 'visual' };
+          ? { verdict: 'protect', reason: 'visual', adultScore: 0.5 }
+          : { verdict: 'safe', reason: 'visual', adultScore: 0.02 };
       },
     },
   );
@@ -1113,8 +1114,8 @@ test('post text is replaced when the media viewer lives outside the tweet articl
       },
       classify(message) {
         return message.kind === 'frame'
-          ? { verdict: 'protect', reason: 'visual' }
-          : { verdict: 'safe', reason: 'visual' };
+          ? { verdict: 'protect', reason: 'visual', adultScore: 0.5 }
+          : { verdict: 'safe', reason: 'visual', adultScore: 0.01 };
       },
     },
   );
@@ -1195,7 +1196,7 @@ test('borderline frame scores aggregate to a mature verdict without extra sampli
   const tweetId = '3055555555555555555';
   const directSource = 'https://video.twimg.com/amplify_video/305555/vid/low.mp4?tag=14';
   // Base frames land at t=3, 10, 17 for a 20s fixture; each is below the
-  // 0.2 single-frame threshold, but two frames average 0.16 >= 0.14.
+  // 0.2 single-frame threshold, but three frames average 0.16 >= 0.14.
   const harness = await directVideoHarness(tweetId, directSource,
     scoredFrameClassifier({ 3: 0.16, 10: 0.16, 17: 0.16 }));
 
@@ -1206,7 +1207,62 @@ test('borderline frame scores aggregate to a mature verdict without extra sampli
     assert.equal(root.dataset.tabcloserMediaReason, 'visual');
     const [verdict] = directVideoVerdicts(harness);
     assert.equal(verdict.aggregate, 'mean');
-    assert.equal(verdict.samplesChecked, 2, 'the mean rule must fire as soon as two borderline frames agree');
+    assert.equal(verdict.samplesChecked, 3, 'the mean rule needs three agreeing frames, never two');
+    assert.equal(verdict.promoted, true);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a marginal single frame with clean neighbors censors locally but is not promoted', async () => {
+  const tweetId = '3166666666666666666';
+  const directSource = 'https://video.twimg.com/amplify_video/316666/vid/low.mp4?tag=14';
+  // One frame at 0.25 (marginal: above 0.2, below the 0.4 strong bar); every
+  // other base and escalation frame is clean, so nothing corroborates it.
+  const harness = await directVideoHarness(tweetId, directSource,
+    scoredFrameClassifier({ 3: 0.25, 10: 0.02, 17: 0.02, 6: 0.02, 13: 0.02, 19: 0.02 }));
+
+  try {
+    await sendDirectVideoMetadata(harness, tweetId, directSource);
+    const root = harness.window.document.getElementById('scored-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected',
+      'the mounted player still fails closed on a marginal frame');
+    const [verdict] = directVideoVerdicts(harness);
+    assert.equal(verdict.aggregate, 'max-unconfirmed');
+    assert.equal(verdict.promoted, false);
+    assert.equal(verdict.samplesChecked, 6, 'a marginal hit must exhaust the escalation frames looking for corroboration');
+
+    // The session set must not know this tweet: a remounted grid tile gets a
+    // fresh look instead of inheriting the doubtful verdict.
+    harness.window.document.body.innerHTML =
+      '<main><a id="marginal-regrid-tile" href="/example/status/' + tweetId + '/video/1">' +
+        '<img src="https://pbs.twimg.com/amplify_video_thumb/316666/img/poster.jpg">' +
+      '</a></main>';
+    await flush(harness.window, 24);
+    const tile = harness.window.document.getElementById('marginal-regrid-tile');
+    assert.equal(tile.dataset.tabcloserMediaState, 'safe',
+      'an unconfirmed marginal verdict must not paint other surfaces of the tweet');
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a marginal frame corroborated by a second suspicious frame protects and promotes', async () => {
+  const tweetId = '3177777777777777777';
+  const directSource = 'https://video.twimg.com/amplify_video/317777/vid/low.mp4?tag=14';
+  // Frame one is marginal (0.25); frame two sits in the escalation band
+  // (0.12 >= 0.1), which is enough agreement to confirm the verdict.
+  const harness = await directVideoHarness(tweetId, directSource,
+    scoredFrameClassifier({ 3: 0.25, 10: 0.12, 17: 0.02 }));
+
+  try {
+    await sendDirectVideoMetadata(harness, tweetId, directSource);
+    const root = harness.window.document.getElementById('scored-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    const [verdict] = directVideoVerdicts(harness);
+    assert.equal(verdict.aggregate, 'confirmed');
+    assert.equal(verdict.promoted, true);
+    assert.equal(verdict.samplesChecked, 2, 'corroboration must stop sampling at the confirming frame');
   } finally {
     harness.dom.window.close();
   }
