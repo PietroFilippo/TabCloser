@@ -605,13 +605,26 @@ async function directVideoSourceForRoot(root, waitForDetail) {
   return waitForDirectVideoSource(tweetId);
 }
 
-function boundedDetachedVideoSampleTimes(duration) {
+function detachedVideoSampleTimes(duration, fractions) {
   if (!Number.isFinite(duration) || duration <= 0) return [];
   const latest = Math.max(0, duration - 0.1);
-  const times = [duration * 0.15, duration * 0.5, duration * 0.85]
+  const times = fractions.map(fraction => duration * fraction)
     .map(time => Math.min(latest, Math.max(0, time)))
     .map(time => Math.round(time * 1000) / 1000);
   return [...new Set(times)];
+}
+
+const baseSampleFractions = [0.15, 0.5, 0.85];
+// Extra frames are only sampled when the base pass scored in the borderline
+// band, so unremarkable videos keep the original three-frame cost.
+const escalationSampleFractions = [0.3, 0.65, 0.95];
+// Several frames each just under the single-frame threshold are strong
+// evidence: protect when the mean crosses this fraction of the threshold.
+const meanThresholdFraction = 0.7;
+const escalationBandFraction = 0.5;
+
+function boundedDetachedVideoSampleTimes(duration) {
+  return detachedVideoSampleTimes(duration, baseSampleFractions);
 }
 
 function disposeDetachedVideoProbe(probe) {
@@ -655,25 +668,56 @@ async function sampleDetachedVideoSource(source, control) {
   document.documentElement.appendChild(probe);
   try {
     if (probe.readyState < 1) await waitForEvent(probe, 'loadedmetadata', 'error', 4000);
-    const times = boundedDetachedVideoSampleTimes(probe.duration);
-    if (!times.length) throw new Error('detached video duration unavailable');
+    const baseTimes = boundedDetachedVideoSampleTimes(probe.duration);
+    if (!baseTimes.length) throw new Error('detached video duration unavailable');
     const mediaKey = TabCloserXMetadata.normalizeMediaUrl(source) || source;
-    for (const [index, time] of times.entries()) {
-      if (!probe.isConnected) throw new Error('detached video probe canceled');
-      await seekDetachedVideoProbe(probe, time);
-      if (!probe.isConnected) throw new Error('detached video probe canceled');
-      const imageData = pixelsFromDrawable(probe);
-      const result = await browser.runtime.sendMessage({
-        type: 'classifyXMedia',
-        kind: 'frame',
-        mediaKey: 'direct-video|' + mediaKey + '|t=' + time,
-        pixels: imageData.data,
-        width: imageData.width,
-        height: imageData.height,
-      });
-      if (result?.verdict === 'protect' && result.reason === 'visual') return { ...result, samplesChecked: index + 1 };
+    const threshold = TabCloserXVerdict.presetValues(settings.sensitivity).threshold;
+    const meanThreshold = threshold * meanThresholdFraction;
+    const escalationBand = threshold * escalationBandFraction;
+    const scores = [];
+
+    const round = value => Math.round(value * 1000) / 1000;
+    const aggregates = () => ({
+      maxAdultScore: round(scores.length ? Math.max(...scores) : 0),
+      meanAdultScore: round(scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : 0),
+    });
+
+    const classifyFrames = async times => {
+      for (const time of times) {
+        if (!probe.isConnected) throw new Error('detached video probe canceled');
+        await seekDetachedVideoProbe(probe, time);
+        if (!probe.isConnected) throw new Error('detached video probe canceled');
+        const imageData = pixelsFromDrawable(probe);
+        const result = await browser.runtime.sendMessage({
+          type: 'classifyXMedia',
+          kind: 'frame',
+          mediaKey: 'direct-video|' + mediaKey + '|t=' + time,
+          pixels: imageData.data,
+          width: imageData.width,
+          height: imageData.height,
+        });
+        scores.push(Number.isFinite(result?.adultScore) ? result.adultScore : 0);
+        if (result?.verdict === 'protect' && result.reason === 'visual') {
+          return { ...result, samplesChecked: scores.length, aggregate: 'max', ...aggregates() };
+        }
+        const { meanAdultScore } = aggregates();
+        if (scores.length >= 2 && meanAdultScore >= meanThreshold) {
+          return { verdict: 'protect', reason: 'visual', samplesChecked: scores.length, aggregate: 'mean', ...aggregates() };
+        }
+      }
+      return null;
+    };
+
+    const baseVerdict = await classifyFrames(baseTimes);
+    if (baseVerdict) return baseVerdict;
+    if (scores.length && Math.max(...scores) >= escalationBand) {
+      control.extendDeadline?.(6000);
+      const extraTimes = detachedVideoSampleTimes(probe.duration, escalationSampleFractions)
+        .filter(time => !baseTimes.includes(time));
+      const escalatedVerdict = await classifyFrames(extraTimes);
+      if (escalatedVerdict) return escalatedVerdict;
     }
-    return { verdict: 'safe', reason: 'visual', samplesChecked: times.length };
+    return { verdict: 'safe', reason: 'visual', samplesChecked: scores.length, ...aggregates() };
   } finally {
     disposeDetachedVideoProbe(probe);
   }
@@ -694,10 +738,21 @@ function classifyDirectVideoSource(source) {
   const control = { probe: null };
   let timeout = null;
   const timedOut = new Promise((_, reject) => {
-    timeout = setTimeout(() => {
-      disposeDetachedVideoProbe(control.probe);
-      reject(new Error('detached video probe timeout'));
-    }, 8000);
+    const arm = delayMs => {
+      timeout = setTimeout(() => {
+        timeout = null;
+        disposeDetachedVideoProbe(control.probe);
+        reject(new Error('detached video probe timeout'));
+      }, delayMs);
+    };
+    arm(8000);
+    // Borderline escalation samples extra frames; it earns a bounded one-time
+    // deadline extension instead of raising the cap for every video.
+    control.extendDeadline = extraMs => {
+      if (timeout == null) return;
+      clearTimeout(timeout);
+      arm(extraMs);
+    };
   });
   const job = Promise.race([sampleDetachedVideoSource(source, control), timedOut])
     .then(result => {
@@ -821,6 +876,9 @@ async function classifyRoot(root, fingerprint, token) {
         verdict: result.verdict,
         reason: result.reason,
         samplesChecked: result.samplesChecked || 0,
+        aggregate: result.aggregate || null,
+        maxAdultScore: result.maxAdultScore ?? null,
+        meanAdultScore: result.meanAdultScore ?? null,
       });
       if (result.verdict !== 'safe') {
         // Direct-video verdicts are tweet-level: remember the ID so remounted

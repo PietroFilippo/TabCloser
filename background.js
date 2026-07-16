@@ -608,7 +608,14 @@ async function classifyXMedia(msg, sender) {
         TabCloserClassifier.classifyImageData(imageData, sensitivity),
         new Promise((_, reject) => setTimeout(() => reject(new Error('classification timeout')), 10000)),
       ]));
-      const result = { verdict: classified.verdict, reason: classified.reason, modelVersion: TabCloserXVerdict.MODEL_VERSION };
+      const result = {
+        verdict: classified.verdict,
+        reason: classified.reason,
+        // Frame callers aggregate borderline scores across a video's frames;
+        // a single-frame verdict alone under-detects adult videos.
+        adultScore: Number.isFinite(classified.adultScore) ? classified.adultScore : null,
+        modelVersion: TabCloserXVerdict.MODEL_VERSION,
+      };
       xClassifierCache.set(cacheKey, result);
       if (result.verdict === 'safe') xClassifierDiagnostics.safe += 1;
       else xClassifierDiagnostics.protected += 1;

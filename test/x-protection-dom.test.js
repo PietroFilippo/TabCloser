@@ -1124,3 +1124,114 @@ test('post text is replaced when the media viewer lives outside the tweet articl
     harness.dom.window.close();
   }
 });
+
+// Frames report an adultScore below the single-frame threshold (0.2 balanced)
+// but with a mean above 0.7 * threshold, or in the escalation band (>= 0.1).
+function scoredFrameClassifier(scoresByTime) {
+  return message => {
+    if (message.kind === 'url') return { verdict: 'safe', reason: 'visual', adultScore: 0.01 };
+    const time = Number(message.mediaKey.match(/\|t=([\d.]+)$/)?.[1] || 0);
+    const adultScore = scoresByTime[time] ?? 0;
+    return { verdict: adultScore >= 0.2 ? 'protect' : 'safe', reason: 'visual', adultScore };
+  };
+}
+
+function directVideoHarness(tweetId, directSource, classify) {
+  return startCoordinator(
+    '<article><a href="/example/status/' + tweetId + '/video/1">' +
+      '<div id="scored-video-root" data-testid="videoComponent">' +
+        '<video poster="https://pbs.twimg.com/amplify_video_thumb/305555/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    {
+      url: 'https://x.com/example/status/' + tweetId,
+      prepare(window) {
+        const createElement = window.document.createElement.bind(window.document);
+        window.document.createElement = function createElementWithVideoProbe(tagName, options) {
+          const element = createElement(tagName, options);
+          if (String(tagName).toLowerCase() === 'video') configureFixtureVideo(window, element, directSource);
+          return element;
+        };
+      },
+      classify,
+    },
+  );
+}
+
+async function sendDirectVideoMetadata(harness, tweetId, directSource) {
+  await harness.sendContentMessage({
+    type: 'xSensitiveMediaMetadata',
+    metadata: { urls: [], tweetIds: [], videoSourcesByTweetId: { [tweetId]: directSource } },
+  });
+  await flush(harness.window, 24);
+}
+
+function directVideoVerdicts(harness) {
+  return harness.debugMessages
+    .map(args => { try { return JSON.parse(args[1]); } catch { return null; } })
+    .filter(entry => entry?.event === 'direct-video-verdict');
+}
+
+test('borderline frame scores aggregate to a mature verdict without extra sampling', async () => {
+  const tweetId = '3055555555555555555';
+  const directSource = 'https://video.twimg.com/amplify_video/305555/vid/low.mp4?tag=14';
+  // Base frames land at t=3, 10, 17 for a 20s fixture; each is below the
+  // 0.2 single-frame threshold, but two frames average 0.16 >= 0.14.
+  const harness = await directVideoHarness(tweetId, directSource,
+    scoredFrameClassifier({ 3: 0.16, 10: 0.16, 17: 0.16 }));
+
+  try {
+    await sendDirectVideoMetadata(harness, tweetId, directSource);
+    const root = harness.window.document.getElementById('scored-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    const [verdict] = directVideoVerdicts(harness);
+    assert.equal(verdict.aggregate, 'mean');
+    assert.equal(verdict.samplesChecked, 2, 'the mean rule must fire as soon as two borderline frames agree');
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a borderline base pass escalates to extra frames and catches a late explicit frame', async () => {
+  const tweetId = '3066666666666666666';
+  const directSource = 'https://video.twimg.com/amplify_video/306666/vid/low.mp4?tag=14';
+  // Base frames (3, 10, 17) stay borderline-low: max 0.12 >= 0.1 escalation
+  // band but mean 0.117 < 0.14. The first escalation frame (t=6) is explicit.
+  const harness = await directVideoHarness(tweetId, directSource,
+    scoredFrameClassifier({ 3: 0.12, 10: 0.11, 17: 0.12, 6: 0.5 }));
+
+  try {
+    await sendDirectVideoMetadata(harness, tweetId, directSource);
+    const root = harness.window.document.getElementById('scored-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    const frameCount = harness.classificationMessages.filter(message => message.kind === 'frame').length;
+    assert.equal(frameCount, 4, 'escalation must stop at the first explicit frame');
+    const [verdict] = directVideoVerdicts(harness);
+    assert.equal(verdict.aggregate, 'max');
+    assert.equal(verdict.samplesChecked, 4);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a clean video keeps the original three-frame cost with no escalation', async () => {
+  const tweetId = '3077777777777777777';
+  const directSource = 'https://video.twimg.com/amplify_video/307777/vid/low.mp4?tag=14';
+  const harness = await directVideoHarness(tweetId, directSource,
+    scoredFrameClassifier({ 3: 0.02, 10: 0.02, 17: 0.02 }));
+
+  try {
+    await sendDirectVideoMetadata(harness, tweetId, directSource);
+    const root = harness.window.document.getElementById('scored-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    const frameCount = harness.classificationMessages.filter(message => message.kind === 'frame').length;
+    assert.equal(frameCount, 3, 'clean videos must never pay for escalation frames');
+    const [verdict] = directVideoVerdicts(harness);
+    assert.equal(verdict.verdict, 'safe');
+    assert.equal(verdict.samplesChecked, 3);
+  } finally {
+    harness.dom.window.close();
+  }
+});

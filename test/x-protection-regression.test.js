@@ -214,12 +214,18 @@ test('videos use metadata, posters, and bounded detached frames without touching
   assert.match(coordinator, /classifyUrl\(poster, keyPrefix \+ '\|poster\|' \+ normalized\)/);
   assert.match(metadata, /function extractDirectVideoSources/);
   assert.match(coordinator, /function boundedDetachedVideoSampleTimes/);
-  assert.ok(coordinator.includes('[duration * 0.15, duration * 0.5, duration * 0.85]'),
-    'only three detached frames may be sampled');
+  assert.ok(coordinator.includes('const baseSampleFractions = [0.15, 0.5, 0.85]'),
+    'the base pass may sample only three detached frames');
+  assert.ok(coordinator.includes('const escalationSampleFractions = [0.3, 0.65, 0.95]'),
+    'borderline escalation is bounded to three extra frames');
+  assert.match(coordinator, /Math\.max\(\.\.\.scores\) >= escalationBand/,
+    'escalation frames may only run for borderline base scores');
   assert.match(coordinator, /function sampleDetachedVideoSource/);
   assert.ok(coordinator.includes('probe.currentTime = time'));
   assert.ok(coordinator.includes("reject(new Error('detached video probe timeout'))"));
-  assert.ok(coordinator.includes('}, 8000);'), 'detached probing must have a hard time ceiling');
+  assert.ok(coordinator.includes('arm(8000);'), 'detached probing must have a hard time ceiling');
+  assert.ok(coordinator.includes('control.extendDeadline?.(6000);'),
+    'escalation earns one bounded deadline extension, never an open-ended cap');
   assert.ok(coordinator.includes('disposeDetachedVideoProbe(probe)'));
   assert.doesNotMatch(coordinator, /classifyVideoFrames/);
   assert.doesNotMatch(coordinator, /videoSampleTimes/);
