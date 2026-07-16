@@ -15,7 +15,11 @@ test('sacred-art assets and the generated list exist in the loadable extension r
   const listPath = path.join(__dirname, '..', 'sacred-art-list.js');
   assert.ok(fs.existsSync(listPath), 'sacred-art-list.js is missing — run `npm run build`');
   const listed = JSON.parse(fs.readFileSync(listPath, 'utf8').replace('globalThis.TabCloserSacredArt = ', '').replace(/;\s*$/, ''));
-  assert.deepEqual(listed.sort(), paintings.sort(), 'generated list must match the assets directory');
+  assert.deepEqual(listed.map(entry => entry.file).sort(), paintings.sort(), 'generated list must match the assets directory');
+  for (const entry of listed) {
+    assert.ok(Number.isFinite(entry.aspect) && entry.aspect > 0,
+      'every painting needs a parsed aspect ratio for shape matching: ' + entry.file);
+  }
 });
 
 test('classifier model assets exist in the loadable extension root', () => {

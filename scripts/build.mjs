@@ -37,11 +37,49 @@ await cp(path.join(root, 'icons'), path.join(dist, 'icons'), { recursive: true }
 await cp(path.join(root, 'assets'), path.join(dist, 'assets'), { recursive: true });
 
 // The replacement-art list is generated from whatever is in assets/sacred-art
-// so adding or removing paintings never requires a code change.
+// so adding or removing paintings never requires a code change. Each entry
+// carries the painting's aspect ratio so the coordinator can pick artwork
+// that fits the censored cell's shape instead of leaving huge backdrop bars.
+function jpegDimensions(buffer) {
+  if (buffer[0] !== 0xFF || buffer[1] !== 0xD8) return null;
+  let offset = 2;
+  while (offset + 9 < buffer.length) {
+    if (buffer[offset] !== 0xFF) { offset += 1; continue; }
+    const marker = buffer[offset + 1];
+    if (marker === 0xFF) { offset += 1; continue; }
+    if (marker === 0x01 || (marker >= 0xD0 && marker <= 0xD9)) { offset += 2; continue; }
+    const length = buffer.readUInt16BE(offset + 2);
+    const isStartOfFrame = marker >= 0xC0 && marker <= 0xCF &&
+      marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC;
+    if (isStartOfFrame) {
+      return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
+    }
+    offset += 2 + length;
+  }
+  return null;
+}
+
+function pngDimensions(buffer) {
+  if (buffer.readUInt32BE(0) !== 0x89504E47) return null;
+  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+}
+
+async function artAspect(file) {
+  try {
+    const buffer = await readFile(path.join(root, 'assets', 'sacred-art', file));
+    const size = /\.png$/i.test(file) ? pngDimensions(buffer) : jpegDimensions(buffer);
+    if (!size?.width || !size?.height) return null;
+    return Math.round((size.width / size.height) * 1000) / 1000;
+  } catch {
+    return null;
+  }
+}
+
 const artFiles = (await readdir(path.join(root, 'assets', 'sacred-art')))
   .filter(file => /\.(?:jpe?g|png|webp)$/i.test(file))
   .sort();
-await writeFile(path.join(dist, 'sacred-art-list.js'), 'globalThis.TabCloserSacredArt = ' + JSON.stringify(artFiles) + ';\n');
+const artEntries = await Promise.all(artFiles.map(async file => ({ file, aspect: await artAspect(file) })));
+await writeFile(path.join(dist, 'sacred-art-list.js'), 'globalThis.TabCloserSacredArt = ' + JSON.stringify(artEntries) + ';\n');
 
 await writeModelAssets();
 const bundleOptions = {

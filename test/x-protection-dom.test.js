@@ -1330,6 +1330,50 @@ test('a clean video keeps the original three-frame cost with no escalation', asy
   }
 });
 
+test('the painting is picked to match the censored cell shape', async () => {
+  function shapedHarness(width, height) {
+    return startCoordinator(
+      '<article><a id="shaped-host" href="/example/status/3133333333/photo/1">' +
+        '<div id="shaped-root" data-testid="tweetPhoto">' +
+          '<img src="https://pbs.twimg.com/media/shaped-fixture.jpg">' +
+        '</div>' +
+      '</a></article>',
+      {
+        prepare(window) {
+          window.TabCloserSacredArt = [
+            { file: 'wide-painting.jpg', aspect: 2.4 },
+            { file: 'tall-painting.jpg', aspect: 0.6 },
+            { file: 'square-painting.jpg', aspect: 1.0 },
+          ];
+          const host = window.document.getElementById('shaped-host');
+          host.getBoundingClientRect = () => ({ width, height, top: 0, left: 0, right: width, bottom: height });
+        },
+        classify: () => ({ verdict: 'protect', reason: 'visual' }),
+      },
+    );
+  }
+
+  const tall = await shapedHarness(270, 480);
+  try {
+    await flush(tall.window, 16);
+    const artwork = tall.window.document.querySelector('.tabcloser-overlay-artwork');
+    assert.ok(artwork.style.backgroundImage.includes('tall-painting.jpg'),
+      'a vertical cell must receive a tall painting');
+  } finally {
+    tall.dom.window.close();
+  }
+
+  const wide = await shapedHarness(480, 270);
+  try {
+    await flush(wide.window, 16);
+    const artwork = wide.window.document.querySelector('.tabcloser-overlay-artwork');
+    assert.ok(artwork.style.backgroundImage.includes('wide-painting.jpg'),
+      'a horizontal cell must receive a wide painting');
+  } finally {
+    wide.dom.window.close();
+  }
+});
+
 test('the painting renders as one blurred backdrop plus one contained copy, never a duplicate', async () => {
   const harness = await startCoordinator(
     '<article><a href="/example/status/3111111111/photo/1">' +

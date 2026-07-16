@@ -301,14 +301,48 @@ function paintArtworkWhenReady(url, layers) {
   else pending.then(apply);
 }
 
+// Art entries are generated with their aspect ratio; plain strings (older
+// lists, test fixtures) have an unknown aspect and match any cell shape.
+function artEntryFile(entry) {
+  return typeof entry === 'string' ? entry : entry?.file;
+}
+
+function artEntryAspect(entry) {
+  const aspect = typeof entry === 'string' ? null : entry?.aspect;
+  return Number.isFinite(aspect) && aspect > 0 ? aspect : null;
+}
+
+function aspectBucket(aspect) {
+  if (aspect < 0.8) return 'tall';
+  if (aspect > 1.25) return 'wide';
+  return 'square';
+}
+
+// X's media cells come in a handful of shapes (16:9 timeline video, 9:16
+// vertical video, square grid tiles). Matching the painting's orientation to
+// the cell keeps the artwork large instead of a thin strip inside backdrop.
+function cellAspectBucketFor(root) {
+  const rect = overlayHostFor(root).getBoundingClientRect?.();
+  if (!rect || !rect.width || !rect.height) return null;
+  return aspectBucket(rect.width / rect.height);
+}
+
 // Deterministic per-media pick so re-renders never shuffle the artwork.
 function sacredArtUrlFor(root) {
   const artList = globalThis.TabCloserSacredArt || [];
   if (!artList.length) return null;
   const existing = sacredArtByRoot.get(root);
   if (existing) return existing;
-  const pick = artList[hashString(sacredArtKeyFor(root)) % artList.length];
-  const url = browser.runtime.getURL('assets/sacred-art/' + pick);
+  const bucket = cellAspectBucketFor(root);
+  const fitting = bucket
+    ? artList.filter(entry => {
+        const aspect = artEntryAspect(entry);
+        return aspect != null && aspectBucket(aspect) === bucket;
+      })
+    : [];
+  const candidates = fitting.length ? fitting : artList;
+  const pick = candidates[hashString(sacredArtKeyFor(root)) % candidates.length];
+  const url = browser.runtime.getURL('assets/sacred-art/' + artEntryFile(pick));
   sacredArtByRoot.set(root, url);
   return url;
 }
