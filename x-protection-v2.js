@@ -529,6 +529,26 @@ function pixelsFromDrawable(drawable) {
   return context.getImageData(0, 0, size, size);
 }
 
+// Squashing a wide or tall frame into the square model input shrinks and
+// distorts the subject, which under-scores skin regions. A second, centered
+// square crop restores the subject at model resolution. Square-ish frames
+// skip it: their squash already matches the crop.
+function centerCropPixelsFromDrawable(drawable) {
+  const width = drawable.videoWidth || drawable.naturalWidth || drawable.width || 0;
+  const height = drawable.videoHeight || drawable.naturalHeight || drawable.height || 0;
+  if (!width || !height) return null;
+  const crop = Math.min(width, height);
+  if (Math.max(width, height) / crop < 1.3) return null;
+  const size = TabCloserXVerdict.MODEL_INPUT_SIZE;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return null;
+  context.drawImage(drawable, (width - crop) / 2, (height - crop) / 2, crop, crop, 0, 0, size, size);
+  return context.getImageData(0, 0, size, size);
+}
+
 async function classifyUrl(value, mediaKey) {
   if (approvedXMediaUrl(value)) {
     return browser.runtime.sendMessage({ type: 'classifyXMedia', kind: 'url', mediaKey, url: value });
@@ -682,22 +702,35 @@ async function sampleDetachedVideoSource(source, control) {
       meanAdultScore: round(scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : 0),
     });
 
+    const classifyPixels = (imageData, frameKey) => browser.runtime.sendMessage({
+      type: 'classifyXMedia',
+      kind: 'frame',
+      mediaKey: frameKey,
+      pixels: imageData.data,
+      width: imageData.width,
+      height: imageData.height,
+    });
+    const matureVerdict = result => result?.verdict === 'protect' && result.reason === 'visual';
+    const scoreOf = result => (Number.isFinite(result?.adultScore) ? result.adultScore : 0);
+
     const classifyFrames = async times => {
       for (const time of times) {
         if (!probe.isConnected) throw new Error('detached video probe canceled');
         await seekDetachedVideoProbe(probe, time);
         if (!probe.isConnected) throw new Error('detached video probe canceled');
-        const imageData = pixelsFromDrawable(probe);
-        const result = await browser.runtime.sendMessage({
-          type: 'classifyXMedia',
-          kind: 'frame',
-          mediaKey: 'direct-video|' + mediaKey + '|t=' + time,
-          pixels: imageData.data,
-          width: imageData.width,
-          height: imageData.height,
-        });
-        scores.push(Number.isFinite(result?.adultScore) ? result.adultScore : 0);
-        if (result?.verdict === 'protect' && result.reason === 'visual') {
+        const frameKey = 'direct-video|' + mediaKey + '|t=' + time;
+        let result = await classifyPixels(pixelsFromDrawable(probe), frameKey);
+        let frameScore = scoreOf(result);
+        if (!matureVerdict(result)) {
+          const cropData = centerCropPixelsFromDrawable(probe);
+          if (cropData) {
+            const cropResult = await classifyPixels(cropData, frameKey + '|crop');
+            frameScore = Math.max(frameScore, scoreOf(cropResult));
+            if (matureVerdict(cropResult)) result = cropResult;
+          }
+        }
+        scores.push(frameScore);
+        if (matureVerdict(result)) {
           return { ...result, samplesChecked: scores.length, aggregate: 'max', ...aggregates() };
         }
         const { meanAdultScore } = aggregates();

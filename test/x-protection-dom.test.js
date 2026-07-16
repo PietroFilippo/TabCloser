@@ -1216,6 +1216,81 @@ test('a borderline base pass escalates to extra frames and catches a late explic
   }
 });
 
+function croppedVideoHarness(tweetId, directSource, videoWidth, videoHeight, classify) {
+  return startCoordinator(
+    '<article><a href="/example/status/' + tweetId + '/video/1">' +
+      '<div id="cropped-video-root" data-testid="videoComponent">' +
+        '<video poster="https://pbs.twimg.com/amplify_video_thumb/308888/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    {
+      url: 'https://x.com/example/status/' + tweetId,
+      prepare(window) {
+        const createElement = window.document.createElement.bind(window.document);
+        window.document.createElement = function createElementWithVideoProbe(tagName, options) {
+          const element = createElement(tagName, options);
+          if (String(tagName).toLowerCase() === 'video') {
+            configureFixtureVideo(window, element, directSource);
+            Object.defineProperties(element, {
+              videoWidth: { configurable: true, get: () => videoWidth },
+              videoHeight: { configurable: true, get: () => videoHeight },
+            });
+          }
+          return element;
+        };
+      },
+      classify,
+    },
+  );
+}
+
+function cropAwareClassifier(message) {
+  if (message.kind === 'url') return { verdict: 'safe', reason: 'visual', adultScore: 0.01 };
+  return message.mediaKey.endsWith('|crop')
+    ? { verdict: 'protect', reason: 'visual', adultScore: 0.6 }
+    : { verdict: 'safe', reason: 'visual', adultScore: 0.05 };
+}
+
+test('a wide video frame is caught by the centered crop when the squashed frame misses', async () => {
+  const tweetId = '3088888888888888888';
+  const directSource = 'https://video.twimg.com/amplify_video/308888/vid/low.mp4?tag=14';
+  const harness = await croppedVideoHarness(tweetId, directSource, 1280, 720, cropAwareClassifier);
+
+  try {
+    await sendDirectVideoMetadata(harness, tweetId, directSource);
+    const root = harness.window.document.getElementById('cropped-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    const frameKeys = harness.classificationMessages
+      .filter(message => message.kind === 'frame')
+      .map(message => message.mediaKey);
+    assert.ok(frameKeys.some(key => key.endsWith('|crop')), 'a wide frame must also be classified center-cropped');
+    assert.equal(frameKeys.length, 2, 'the crop verdict must stop sampling at the first frame');
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a square video never pays for a center-crop classification', async () => {
+  const tweetId = '3099999999999999999';
+  const directSource = 'https://video.twimg.com/amplify_video/309999/vid/low.mp4?tag=14';
+  const harness = await croppedVideoHarness(tweetId, directSource, 720, 720, cropAwareClassifier);
+
+  try {
+    await sendDirectVideoMetadata(harness, tweetId, directSource);
+    const root = harness.window.document.getElementById('cropped-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    const frameKeys = harness.classificationMessages
+      .filter(message => message.kind === 'frame')
+      .map(message => message.mediaKey);
+    assert.equal(frameKeys.some(key => key.endsWith('|crop')), false,
+      'square frames must skip the redundant crop');
+    assert.equal(frameKeys.length, 3);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
 test('a clean video keeps the original three-frame cost with no escalation', async () => {
   const tweetId = '3077777777777777777';
   const directSource = 'https://video.twimg.com/amplify_video/307777/vid/low.mp4?tag=14';
