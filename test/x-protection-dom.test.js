@@ -1263,11 +1263,22 @@ function croppedVideoHarness(tweetId, directSource, videoWidth, videoHeight, cla
   );
 }
 
+// Squashed frames score just above the crop gate (0.25 * 0.2 = 0.05
+// balanced), so the crop pass runs and catches what the squash missed.
 function cropAwareClassifier(message) {
   if (message.kind === 'url') return { verdict: 'safe', reason: 'visual', adultScore: 0.01 };
   return message.mediaKey.endsWith('|crop')
     ? { verdict: 'protect', reason: 'visual', adultScore: 0.6 }
-    : { verdict: 'safe', reason: 'visual', adultScore: 0.05 };
+    : { verdict: 'safe', reason: 'visual', adultScore: 0.06 };
+}
+
+// Squashed frames read clearly innocent (below the crop gate); the crop pass
+// must not run even though it would falsely protect.
+function innocentSquashClassifier(message) {
+  if (message.kind === 'url') return { verdict: 'safe', reason: 'visual', adultScore: 0.01 };
+  return message.mediaKey.endsWith('|crop')
+    ? { verdict: 'protect', reason: 'visual', adultScore: 0.84 }
+    : { verdict: 'safe', reason: 'visual', adultScore: 0.02 };
 }
 
 test('a wide video frame is caught by the centered crop when the squashed frame misses', async () => {
@@ -1285,6 +1296,30 @@ test('a wide video frame is caught by the centered crop when the squashed frame 
       .map(message => message.mediaKey);
     assert.ok(frameKeys.some(key => key.endsWith('|crop')), 'a wide frame must also be classified center-cropped');
     assert.equal(frameKeys.length, 2, 'the crop verdict must stop sampling at the first frame');
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a clearly innocent vertical video never reaches the crop pass that would falsely protect it', async () => {
+  const tweetId = '3155555555555555555';
+  const directSource = 'https://video.twimg.com/amplify_video/315555/vid/low.mp4?tag=14';
+  const harness = await croppedVideoHarness(tweetId, directSource, 406, 720, innocentSquashClassifier);
+
+  try {
+    await sendDirectVideoMetadata(harness, tweetId, directSource);
+    const root = harness.window.document.getElementById('cropped-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'safe',
+      'innocent squash frames must release the video without consulting the crop');
+    const frameKeys = harness.classificationMessages
+      .filter(message => message.kind === 'frame')
+      .map(message => message.mediaKey);
+    assert.equal(frameKeys.some(key => key.endsWith('|crop')), false,
+      'the crop gate must skip frames whose squashed score shows no suspicion');
+    const [verdict] = directVideoVerdicts(harness);
+    assert.equal(verdict.verdict, 'safe');
+    assert.equal(verdict.frames.length, 3, 'per-frame scores must be logged for diagnosis');
+    assert.ok(verdict.frames.every(frame => frame.crop === null));
   } finally {
     harness.dom.window.close();
   }

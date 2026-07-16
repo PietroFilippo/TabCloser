@@ -726,6 +726,11 @@ const escalationSampleFractions = [0.3, 0.65, 0.95];
 // evidence: protect when the mean crosses this fraction of the threshold.
 const meanThresholdFraction = 0.7;
 const escalationBandFraction = 0.5;
+// The center-crop pass zooms the subject, which recovers adult frames the
+// squashed pass under-scores — but on innocent vertical videos of people it
+// over-scores skin/face closeups. Only frames whose squashed score already
+// shows suspicion earn the crop pass.
+const cropGateFraction = 0.25;
 
 function boundedDetachedVideoSampleTimes(duration) {
   return detachedVideoSampleTimes(duration, baseSampleFractions);
@@ -778,7 +783,9 @@ async function sampleDetachedVideoSource(source, control) {
     const threshold = TabCloserXVerdict.presetValues(settings.sensitivity).threshold;
     const meanThreshold = threshold * meanThresholdFraction;
     const escalationBand = threshold * escalationBandFraction;
+    const cropGate = threshold * cropGateFraction;
     const scores = [];
+    const frameDetails = [];
 
     const round = value => Math.round(value * 1000) / 1000;
     const aggregates = () => ({
@@ -804,22 +811,30 @@ async function sampleDetachedVideoSource(source, control) {
         if (!probe.isConnected) throw new Error('detached video probe canceled');
         const frameKey = 'direct-video|' + mediaKey + '|t=' + time;
         let result = await classifyPixels(pixelsFromDrawable(probe), frameKey);
-        let frameScore = scoreOf(result);
-        if (!matureVerdict(result)) {
+        const squashScore = scoreOf(result);
+        let frameScore = squashScore;
+        let cropScore = null;
+        if (!matureVerdict(result) && squashScore >= cropGate) {
           const cropData = centerCropPixelsFromDrawable(probe);
           if (cropData) {
             const cropResult = await classifyPixels(cropData, frameKey + '|crop');
-            frameScore = Math.max(frameScore, scoreOf(cropResult));
+            cropScore = scoreOf(cropResult);
+            frameScore = Math.max(frameScore, cropScore);
             if (matureVerdict(cropResult)) result = cropResult;
           }
         }
         scores.push(frameScore);
+        frameDetails.push({
+          t: time,
+          squash: round(squashScore),
+          crop: cropScore == null ? null : round(cropScore),
+        });
         if (matureVerdict(result)) {
-          return { ...result, samplesChecked: scores.length, aggregate: 'max', ...aggregates() };
+          return { ...result, samplesChecked: scores.length, aggregate: 'max', frames: frameDetails, ...aggregates() };
         }
         const { meanAdultScore } = aggregates();
         if (scores.length >= 2 && meanAdultScore >= meanThreshold) {
-          return { verdict: 'protect', reason: 'visual', samplesChecked: scores.length, aggregate: 'mean', ...aggregates() };
+          return { verdict: 'protect', reason: 'visual', samplesChecked: scores.length, aggregate: 'mean', frames: frameDetails, ...aggregates() };
         }
       }
       return null;
@@ -834,7 +849,7 @@ async function sampleDetachedVideoSource(source, control) {
       const escalatedVerdict = await classifyFrames(extraTimes);
       if (escalatedVerdict) return escalatedVerdict;
     }
-    return { verdict: 'safe', reason: 'visual', samplesChecked: scores.length, ...aggregates() };
+    return { verdict: 'safe', reason: 'visual', samplesChecked: scores.length, frames: frameDetails, ...aggregates() };
   } finally {
     disposeDetachedVideoProbe(probe);
   }
@@ -996,6 +1011,7 @@ async function classifyRoot(root, fingerprint, token) {
         aggregate: result.aggregate || null,
         maxAdultScore: result.maxAdultScore ?? null,
         meanAdultScore: result.meanAdultScore ?? null,
+        frames: result.frames || null,
       });
       if (result.verdict !== 'safe') {
         // Direct-video verdicts are tweet-level: remember the ID so remounted
