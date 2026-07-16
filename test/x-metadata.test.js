@@ -139,6 +139,50 @@ test('maps a VPN-stable sensitive author flag to the media tweet instead of emit
   });
 });
 
+test('a sensitive profile interstitial protects the author media tweet, other interstitials do not', () => {
+  function payloadWithInterstitial(tweetId, interstitialType) {
+    return {
+      data: {
+        result: {
+          __typename: 'Tweet',
+          rest_id: tweetId,
+          core: {
+            user_results: {
+              result: {
+                __typename: 'User',
+                rest_id: '2074572527796367361',
+                legacy: {
+                  possibly_sensitive: false,
+                  profile_interstitial_type: interstitialType,
+                },
+              },
+            },
+          },
+          legacy: {
+            possibly_sensitive: false,
+            extended_entities: {
+              media: [{ media_url_https: 'https://pbs.twimg.com/amplify_video_thumb/2077224740972863489/img/poster.jpg' }],
+            },
+          },
+        },
+      },
+    };
+  }
+
+  assert.deepEqual(extractSensitiveMedia(payloadWithInterstitial('2077225687815950692', 'sensitive_media_warning')), {
+    urls: ['https://pbs.twimg.com/amplify_video_thumb/2077224740972863489/img/poster.jpg'],
+    tweetIds: ['2077225687815950692'],
+  });
+  assert.deepEqual(extractSensitiveMedia(payloadWithInterstitial('2077225687815950693', 'SensitiveMedia')), {
+    urls: ['https://pbs.twimg.com/amplify_video_thumb/2077224740972863489/img/poster.jpg'],
+    tweetIds: ['2077225687815950693'],
+  });
+  assert.deepEqual(extractSensitiveMedia(payloadWithInterstitial('2077225687815950694', 'fake_account')),
+    { urls: [], tweetIds: [] });
+  assert.deepEqual(extractSensitiveMedia(payloadWithInterstitial('2077225687815950695', '')),
+    { urls: [], tweetIds: [] });
+});
+
 test('returns no signal for unlabeled mature-looking media metadata', () => {
   const payload = { rest_id: '9', legacy: { entities: { media: [{ media_url_https: 'https://pbs.twimg.com/media/unlabeled.jpg' }] } } };
   assert.deepEqual(extractSensitiveMedia(payload), { urls: [], tweetIds: [] });

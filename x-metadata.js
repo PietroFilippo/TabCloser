@@ -69,7 +69,18 @@
   function authorHasSensitivityMarker(node) {
     const author = authorResultFromTweetNode(node);
     const legacy = author?.legacy && typeof author.legacy === 'object' ? author.legacy : author;
-    return hasDirectSensitivityMarker(author) || hasDirectSensitivityMarker(legacy);
+    return hasDirectSensitivityMarker(author) || hasDirectSensitivityMarker(legacy) ||
+      hasSensitiveProfileInterstitial(author) || hasSensitiveProfileInterstitial(legacy);
+  }
+
+  // X stamps accounts that habitually post mature media with a profile-level
+  // interstitial. Unlike mediaVisibilityResults, this is author account state,
+  // not per-viewer visibility, so it survives VPN exit regions that omit the
+  // per-tweet interstitial metadata.
+  function hasSensitiveProfileInterstitial(value) {
+    return !!value && typeof value === 'object' &&
+      typeof value.profile_interstitial_type === 'string' &&
+      /sensitive/i.test(value.profile_interstitial_type);
   }
 
   function hasDirectSensitivityMarker(value) {
