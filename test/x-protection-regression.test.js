@@ -126,10 +126,16 @@ test('protected media is covered by a deterministic sacred-art painting with a c
     'only confirmed mature verdicts may show a painting');
   assert.match(coordinator, /willRetry = state === 'protected' && !mature && retryableReason\.test/,
     'failure verdicts awaiting retry must render like the pending state');
-  assert.match(stylesheet, /\.tabcloser-media-overlay-art \{[^}]*background-size: cover !important/,
-    'the artwork backdrop must fill the whole media cell');
+  assert.doesNotMatch(stylesheet, /\.tabcloser-media-overlay-art \{[^}]*background-size/,
+    'the overlay itself must not carry the painting: an unblurred cover copy duplicates the artwork');
+  assert.match(stylesheet, /\.tabcloser-overlay-backdrop \{[^}]*background-size: cover !important/,
+    'the backdrop must fill the whole media cell');
+  assert.match(stylesheet, /\.tabcloser-overlay-backdrop \{[^}]*filter: blur/,
+    'the backdrop must be blurred so it never reads as a second copy of the painting');
   assert.match(stylesheet, /\.tabcloser-overlay-artwork \{[^}]*background-size: contain !important/,
     'the foreground artwork must remain fully visible instead of being cropped');
+  assert.match(coordinator, /function paintArtworkWhenReady/,
+    'paintings must be decode-gated so progressive JPEG bands never flash');
   assert.doesNotMatch(stylesheet, /object-fit\s*:/, 'the extension must not contribute Firefox object-fit parse warnings');
   assert.match(stylesheet, /\.tabcloser-media-overlay \{[^}]*background-color:/, 'the base overlay must not use the background shorthand, which would reset the painting');
   assert.doesNotMatch(stylesheet, /\.tabcloser-media-overlay \{[^}]*background: rgba/);

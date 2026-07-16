@@ -259,6 +259,48 @@ function sacredArtKeyFor(root) {
   return stableSource || rootFingerprint(root);
 }
 
+// Applying an undecoded painting paints progressively (visible white bands
+// while scrolling). Each painting is fetched and decoded off-thread once;
+// the dark overlay backdrop covers the wait, then the image appears whole.
+const decodedArtUrls = new Set();
+const artDecodesInFlight = new Map();
+
+function decodeArtUrl(url) {
+  if (decodedArtUrls.has(url)) return null;
+  let pending = artDecodesInFlight.get(url);
+  if (!pending) {
+    pending = new Promise(resolve => {
+      const image = new Image();
+      const finish = () => {
+        artDecodesInFlight.delete(url);
+        // Errors also settle as "decoded": applying anyway beats retry loops.
+        decodedArtUrls.add(url);
+        resolve();
+      };
+      image.addEventListener('load', () => {
+        const decoded = typeof image.decode === 'function' ? image.decode() : Promise.resolve();
+        Promise.resolve(decoded).catch(() => {}).then(finish);
+      }, { once: true });
+      image.addEventListener('error', finish, { once: true });
+      image.src = url;
+    });
+    artDecodesInFlight.set(url, pending);
+  }
+  return pending;
+}
+
+function paintArtworkWhenReady(url, layers) {
+  // Painting a detached layer is harmless (the node is simply discarded), so
+  // no connectivity guard: the layers may be appended to the host after this
+  // runs synchronously for an already-decoded painting.
+  const apply = () => {
+    for (const layer of layers) layer.style.backgroundImage = 'url("' + url + '")';
+  };
+  const pending = decodeArtUrl(url);
+  if (!pending) apply();
+  else pending.then(apply);
+}
+
 // Deterministic per-media pick so re-renders never shuffle the artwork.
 function sacredArtUrlFor(root) {
   const artList = globalThis.TabCloserSacredArt || [];
@@ -436,18 +478,26 @@ function setRootState(root, state, reason) {
   overlay.className = 'tabcloser-media-overlay' +
     (shieldOnly ? ' tabcloser-media-overlay-pending' : '') +
     (artUrl ? ' tabcloser-media-overlay-art' : '');
-  overlay.style.backgroundImage = artUrl ? 'url("' + artUrl + '")' : '';
+  overlay.style.backgroundImage = '';
   overlay.setAttribute('role', 'img');
   overlay.setAttribute('aria-live', 'polite');
   const hiddenLabel = 'Sensitive media hidden';
   overlay.setAttribute('aria-label', shieldOnly ? 'Media is being checked by TabCloser' : hiddenLabel + ' by TabCloser');
   overlay.textContent = '';
   if (artUrl) {
+    // Two layers, one image: a blurred cover backdrop fills the letterbox
+    // bars and a contained artwork shows the painting whole. The overlay
+    // itself never carries the image — an unblurred cover copy behind the
+    // contained one reads as a duplicated painting.
+    const backdrop = document.createElement('div');
+    backdrop.className = 'tabcloser-overlay-backdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
     const artwork = document.createElement('div');
     artwork.className = 'tabcloser-overlay-artwork';
-    artwork.style.backgroundImage = 'url("' + artUrl + '")';
     artwork.setAttribute('aria-hidden', 'true');
+    overlay.appendChild(backdrop);
     overlay.appendChild(artwork);
+    paintArtworkWhenReady(artUrl, [backdrop, artwork]);
   }
   if (!shieldOnly) {
     const label = document.createElement('span');

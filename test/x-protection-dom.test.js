@@ -46,6 +46,25 @@ async function startCoordinator(html, {
   }
   window.HTMLMediaElement.prototype.pause = function pause() {};
   window.HTMLMediaElement.prototype.load = function load() {};
+  // jsdom never loads image resources: paintings "decode" on the next timer
+  // turn so decode-gated artwork application stays observable. Tests can set
+  // window.__artImageLoader to control when a painting finishes loading.
+  window.Image = function FixtureArtImage() {
+    const image = window.document.createElement('img');
+    image.decode = () => Promise.resolve();
+    let value = '';
+    Object.defineProperty(image, 'src', {
+      configurable: true,
+      get: () => value,
+      set(next) {
+        value = next;
+        const loader = window.__artImageLoader ||
+          (target => window.setTimeout(() => target.dispatchEvent(new window.Event('load')), 0));
+        loader(image);
+      },
+    });
+    return image;
+  };
   window.HTMLCanvasElement.prototype.getContext = function getContext() {
     return {
       drawImage() {},
@@ -1306,6 +1325,77 @@ test('a clean video keeps the original three-frame cost with no escalation', asy
     const [verdict] = directVideoVerdicts(harness);
     assert.equal(verdict.verdict, 'safe');
     assert.equal(verdict.samplesChecked, 3);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('the painting renders as one blurred backdrop plus one contained copy, never a duplicate', async () => {
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/3111111111/photo/1">' +
+      '<div id="dup-root" data-testid="tweetPhoto">' +
+        '<img src="https://pbs.twimg.com/media/dup-fixture.jpg">' +
+      '</div>' +
+    '</a></article>',
+    { classify: () => ({ verdict: 'protect', reason: 'visual' }) },
+  );
+
+  try {
+    await flush(harness.window, 16);
+    const root = harness.window.document.getElementById('dup-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    const overlay = root.closest('a').querySelector('.tabcloser-media-overlay-art');
+    assert.ok(overlay);
+    assert.equal(overlay.style.backgroundImage, '',
+      'the overlay itself must not carry an unblurred cover copy of the painting');
+    const backdrop = overlay.querySelector('.tabcloser-overlay-backdrop');
+    const artwork = overlay.querySelector('.tabcloser-overlay-artwork');
+    assert.ok(backdrop, 'the blurred backdrop layer must exist');
+    assert.ok(artwork, 'the contained artwork layer must exist');
+    assert.ok(artwork.style.backgroundImage.includes('test-painting.jpg'));
+    assert.equal(backdrop.style.backgroundImage, artwork.style.backgroundImage,
+      'both layers must show the same painting');
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a painting is applied only after it decodes, never while partially loaded', async () => {
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/3122222222/photo/1">' +
+      '<div id="decode-root" data-testid="tweetPhoto">' +
+        '<img src="https://pbs.twimg.com/media/decode-fixture.jpg">' +
+      '</div>' +
+    '</a></article>',
+    {
+      prepare(window) {
+        window.__pendingArtImages = [];
+        window.__artImageLoader = image => window.__pendingArtImages.push(image);
+      },
+      classify: () => ({ verdict: 'protect', reason: 'visual' }),
+    },
+  );
+
+  try {
+    await flush(harness.window, 16);
+    const root = harness.window.document.getElementById('decode-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    const overlay = root.closest('a').querySelector('.tabcloser-media-overlay-art');
+    const backdrop = overlay.querySelector('.tabcloser-overlay-backdrop');
+    const artwork = overlay.querySelector('.tabcloser-overlay-artwork');
+    assert.ok(artwork, 'the artwork layer mounts immediately as a dark shield');
+    assert.equal(artwork.style.backgroundImage, '',
+      'an undecoded painting must not be painted (progressive bands would flash)');
+    assert.equal(backdrop.style.backgroundImage, '');
+    assert.equal(harness.window.__pendingArtImages.length, 1, 'the painting must be preloaded exactly once');
+
+    for (const image of harness.window.__pendingArtImages) {
+      image.dispatchEvent(new harness.window.Event('load'));
+    }
+    await flush(harness.window, 8);
+    assert.ok(artwork.style.backgroundImage.includes('test-painting.jpg'),
+      'the painting must appear once decoding completes');
+    assert.equal(backdrop.style.backgroundImage, artwork.style.backgroundImage);
   } finally {
     harness.dom.window.close();
   }
