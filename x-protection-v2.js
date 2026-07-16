@@ -8,6 +8,11 @@ let settings = { replaceText: false, blockLike: false, sensitivity: 'balanced' }
 let operationId = 0;
 const sensitiveUrls = new Set();
 const sensitiveTweetIds = new Set();
+// Session-level visual verdicts: tweet IDs whose direct-video probe returned
+// a confirmed mature verdict. Remounted media (Media tab grid, re-rendered
+// detail view) is protected from this set without re-probing the video.
+// Safe verdicts are never stored here; only 'protect' promotes.
+const visuallyProtectedTweetIds = new Set();
 const directVideoSourcesByTweetId = new Map();
 const directVideoSourceWaitersByTweetId = new Map();
 const directVideoVerdictCache = new Map();
@@ -199,6 +204,21 @@ function metadataProtects(root) {
     (!!tweetId && sensitiveTweetIds.has(tweetId));
 }
 
+function rememberVisuallyProtectedTweet(tweetId) {
+  const id = tweetId == null ? null : String(tweetId);
+  if (!id) return;
+  visuallyProtectedTweetIds.delete(id);
+  visuallyProtectedTweetIds.add(id);
+  while (visuallyProtectedTweetIds.size > 500) {
+    visuallyProtectedTweetIds.delete(visuallyProtectedTweetIds.values().next().value);
+  }
+}
+
+function visualVerdictProtects(root) {
+  const tweetId = statusIdFor(root);
+  return !!tweetId && visuallyProtectedTweetIds.has(tweetId);
+}
+
 function overlayHostFor(root) {
   // X's clickable photo/video cell is usually an ancestor link that is taller
   // than the media root; the overlay must cover (and the blocker must guard)
@@ -296,15 +316,33 @@ function tweetLayerFor(node, article) {
   return article;
 }
 
+// The media viewer (photo/video detail overlay) can live outside the tweet's
+// <article>; the matching article is then found by its own status link so the
+// post text can still be replaced.
+function articleForStatusId(statusId) {
+  if (!statusId) return null;
+  for (const link of document.querySelectorAll('article a[href*="/status/' + statusId + '"]')) {
+    if (statusIdFromHref(link.getAttribute('href') || '') !== statusId) continue;
+    const article = link.closest('article');
+    if (article) return article;
+  }
+  return null;
+}
+
 function applyQuoteFor(root) {
   if (!settings.replaceText || !(root instanceof Element)) return;
-  const article = root.closest('article');
+  const statusId = statusIdFor(root);
+  let article = root.closest('article');
+  let layer = article ? tweetLayerFor(root, article) : null;
+  if (!article) {
+    article = articleForStatusId(statusId);
+    layer = article;
+  }
   if (!article) return;
-  const layer = tweetLayerFor(root, article);
   const text = [...article.querySelectorAll('[data-testid="tweetText"]')]
     .find(candidate => tweetLayerFor(candidate, article) === layer);
   if (!text || text.dataset.tabcloserQuoted === 'yes') return;
-  const quote = quoteForKey(statusIdFor(root) || text.textContent.slice(0, 40));
+  const quote = quoteForKey(statusId || text.textContent.slice(0, 40));
   if (!quote) return;
   text.dataset.tabcloserQuoted = 'yes';
   text.classList.add('tabcloser-hidden-text');
@@ -375,7 +413,13 @@ function setRootState(root, state, reason) {
     restoreRootPlayback(root);
     existing?.remove();
     clearOverlayHost(host);
-    if (article && !article.querySelector('[data-tabcloser-media-state="protected"]')) restoreArticleText(article);
+    // The protected element can live outside the article (media viewer), so a
+    // sibling release must also respect the tweet-level session verdict.
+    const articleTweetId = article ? statusIdFor(article) : null;
+    const tweetStillProtected = !!articleTweetId &&
+      (visuallyProtectedTweetIds.has(articleTweetId) || sensitiveTweetIds.has(articleTweetId));
+    if (article && !tweetStillProtected &&
+        !article.querySelector('[data-tabcloser-media-state="protected"]')) restoreArticleText(article);
     return;
   }
   activateOverlayHost(host);
@@ -733,6 +777,10 @@ async function classifyRoot(root, fingerprint, token) {
       protectGroup(root, 'metadata');
       return;
     }
+    if (visualVerdictProtects(root)) {
+      protectGroup(root, 'visual');
+      return;
+    }
     const images = [...root.querySelectorAll('img[src]')].filter(image => !decorativeImage(image));
     const videos = [...root.querySelectorAll('video')];
     if (root.matches('img[src]') && !decorativeImage(root)) images.unshift(root);
@@ -775,7 +823,16 @@ async function classifyRoot(root, fingerprint, token) {
         samplesChecked: result.samplesChecked || 0,
       });
       if (result.verdict !== 'safe') {
-        protectUnsafeResult(root, result.reason || 'visual');
+        // Direct-video verdicts are tweet-level: remember the ID so remounted
+        // media (Media tab thumbnail, re-rendered detail view) is protected
+        // without a second probe, and protect the whole tweet layer so the
+        // post text is replaced along with the media.
+        if (result.reason === 'visual') {
+          rememberVisuallyProtectedTweet(statusIdFor(root));
+          protectGroup(root, 'visual');
+        } else {
+          protectUnsafeResult(root, result.reason || 'visual');
+        }
         return;
       }
     }
@@ -788,6 +845,10 @@ async function classifyRoot(root, fingerprint, token) {
     }
     if (metadataProtects(root) || root.dataset.tabcloserMediaState === 'protected') {
       protectGroup(root, root.dataset.tabcloserMediaReason || 'metadata');
+      return;
+    }
+    if (visualVerdictProtects(root)) {
+      protectGroup(root, 'visual');
       return;
     }
     rememberVerifiedSafeMedia(root);
@@ -856,6 +917,13 @@ function discoverRoot(root) {
   if (!fingerprint || fingerprint === 'none') return;
   if (metadataProtects(root)) {
     protectGroup(root, 'metadata');
+    return;
+  }
+  if (visualVerdictProtects(root)) {
+    if (root.dataset.tabcloserMediaState !== 'protected') {
+      xMetadataDebug('session-verdict-applied', { statusId: statusIdFor(root) });
+    }
+    protectGroup(root, 'visual');
     return;
   }
   if (hasVerifiedSafeMedia(root)) {
@@ -961,6 +1029,8 @@ function setProtection(config) {
   }
   cancelDetachedVideoProbes();
   directVideoVerdictCache.clear();
+  // Settings changes (notably sensitivity) invalidate earlier visual verdicts.
+  visuallyProtectedTweetIds.clear();
   clearAllStates();
   if (mode !== 'off') discoverWithin(document);
 }

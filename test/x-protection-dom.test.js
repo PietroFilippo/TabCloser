@@ -941,3 +941,186 @@ test('poster verification never seeks an HLS video to expand its buffer', async 
     harness.dom.window.close();
   }
 });
+
+test('a direct-video mature verdict persists for remounted media without a second probe', async () => {
+  const tweetId = '3011111111111111111';
+  const otherTweetId = '3022222222222222222';
+  const directSource = 'https://video.twimg.com/amplify_video/301111/vid/low.mp4?tag=14';
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/' + tweetId + '/video/1">' +
+      '<div id="session-video-root" data-testid="videoComponent">' +
+        '<video poster="https://pbs.twimg.com/amplify_video_thumb/301111/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    {
+      url: 'https://x.com/example/status/' + tweetId,
+      prepare(window) {
+        const createElement = window.document.createElement.bind(window.document);
+        window.document.createElement = function createElementWithVideoProbe(tagName, options) {
+          const element = createElement(tagName, options);
+          if (String(tagName).toLowerCase() === 'video') configureFixtureVideo(window, element, directSource);
+          return element;
+        };
+      },
+      classify: laterFrameClassifier,
+    },
+  );
+
+  try {
+    await harness.sendContentMessage({
+      type: 'xSensitiveMediaMetadata',
+      metadata: {
+        urls: [],
+        tweetIds: [],
+        videoSourcesByTweetId: { [tweetId]: directSource },
+      },
+    });
+    await flush(harness.window, 24);
+
+    const root = harness.window.document.getElementById('session-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.equal(root.dataset.tabcloserMediaReason, 'visual');
+    const frameMessagesAfterDetail = harness.classificationMessages.filter(message => message.kind === 'frame').length;
+    assert.ok(frameMessagesAfterDetail > 0, 'the detail view must have probed the direct video');
+
+    // Simulate navigating back to the Media tab: X remounts the grid with
+    // poster-only tiles for the same tweet and an unrelated one.
+    harness.window.document.body.innerHTML =
+      '<main>' +
+        '<a id="regrid-tile" href="/example/status/' + tweetId + '/video/1">' +
+          '<img src="https://pbs.twimg.com/amplify_video_thumb/301111/img/poster.jpg">' +
+        '</a>' +
+        '<a id="other-tile" href="/example/status/' + otherTweetId + '/video/1">' +
+          '<img src="https://pbs.twimg.com/amplify_video_thumb/302222/img/other-poster.jpg">' +
+        '</a>' +
+      '</main>';
+    await flush(harness.window, 24);
+
+    const regridTile = harness.window.document.getElementById('regrid-tile');
+    assert.equal(regridTile.dataset.tabcloserMediaState, 'protected',
+      'the remounted thumbnail must inherit the session verdict');
+    assert.equal(regridTile.dataset.tabcloserMediaReason, 'visual');
+    assert.ok(regridTile.querySelector('.tabcloser-media-overlay-art'),
+      'the remounted thumbnail must be painted immediately');
+
+    const frameMessagesAfterRemount = harness.classificationMessages.filter(message => message.kind === 'frame').length;
+    assert.equal(frameMessagesAfterRemount, frameMessagesAfterDetail,
+      'the remounted tweet must not trigger a second video probe');
+
+    const otherTile = harness.window.document.getElementById('other-tile');
+    assert.equal(otherTile.dataset.tabcloserMediaState, 'safe',
+      'an unrelated tweet must not inherit the verdict');
+    assert.equal(otherTile.querySelector('.tabcloser-media-overlay'), null);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('a direct-video safe verdict is not propagated as protected on remount', async () => {
+  const tweetId = '3033333333333333333';
+  const directSource = 'https://video.twimg.com/amplify_video/303333/vid/low.mp4?tag=14';
+  const harness = await startCoordinator(
+    '<article><a href="/example/status/' + tweetId + '/video/1">' +
+      '<div id="safe-video-root" data-testid="videoComponent">' +
+        '<video poster="https://pbs.twimg.com/amplify_video_thumb/303333/img/poster.jpg"></video>' +
+      '</div>' +
+    '</a></article>',
+    {
+      url: 'https://x.com/example/status/' + tweetId,
+      prepare(window) {
+        const createElement = window.document.createElement.bind(window.document);
+        window.document.createElement = function createElementWithVideoProbe(tagName, options) {
+          const element = createElement(tagName, options);
+          if (String(tagName).toLowerCase() === 'video') configureFixtureVideo(window, element, directSource);
+          return element;
+        };
+      },
+      classify: () => ({ verdict: 'safe', reason: 'visual' }),
+    },
+  );
+
+  try {
+    await harness.sendContentMessage({
+      type: 'xSensitiveMediaMetadata',
+      metadata: {
+        urls: [],
+        tweetIds: [],
+        videoSourcesByTweetId: { [tweetId]: directSource },
+      },
+    });
+    await flush(harness.window, 24);
+    assert.equal(harness.window.document.getElementById('safe-video-root').dataset.tabcloserMediaState, 'safe');
+
+    harness.window.document.body.innerHTML =
+      '<main><a id="safe-regrid-tile" href="/example/status/' + tweetId + '/video/1">' +
+        '<img src="https://pbs.twimg.com/amplify_video_thumb/303333/img/poster.jpg">' +
+      '</a></main>';
+    await flush(harness.window, 24);
+
+    const tile = harness.window.document.getElementById('safe-regrid-tile');
+    assert.equal(tile.dataset.tabcloserMediaState, 'safe');
+    assert.equal(tile.querySelector('.tabcloser-media-overlay-art'), null);
+  } finally {
+    harness.dom.window.close();
+  }
+});
+
+test('post text is replaced when the media viewer lives outside the tweet article', async () => {
+  const tweetId = '3044444444444444444';
+  const directSource = 'https://video.twimg.com/amplify_video/304444/vid/low.mp4?tag=14';
+  const harness = await startCoordinator(
+    '<div id="outside-viewer" data-testid="videoComponent">' +
+      '<video poster="https://pbs.twimg.com/amplify_video_thumb/304444/img/poster.jpg"></video>' +
+    '</div>' +
+    '<article id="detail-article">' +
+      '<a href="/example/status/' + tweetId + '"><time>1h</time></a>' +
+      '<div data-testid="tweetText">original sensitive text</div>' +
+    '</article>',
+    {
+      url: 'https://x.com/example/status/' + tweetId,
+      config: {
+        labeled: { enabled: true },
+        model: { enabled: true, sensitivity: 'balanced' },
+        replaceText: true,
+      },
+      prepare(window) {
+        window.TabCloserQuotes = [{ text: 'Test quote', author: 'Test Author' }];
+        const createElement = window.document.createElement.bind(window.document);
+        window.document.createElement = function createElementWithVideoProbe(tagName, options) {
+          const element = createElement(tagName, options);
+          if (String(tagName).toLowerCase() === 'video') configureFixtureVideo(window, element, directSource);
+          return element;
+        };
+      },
+      classify(message) {
+        return message.kind === 'frame'
+          ? { verdict: 'protect', reason: 'visual' }
+          : { verdict: 'safe', reason: 'visual' };
+      },
+    },
+  );
+
+  try {
+    await harness.sendContentMessage({
+      type: 'xSensitiveMediaMetadata',
+      metadata: {
+        urls: [],
+        tweetIds: [],
+        videoSourcesByTweetId: { [tweetId]: directSource },
+      },
+    });
+    await flush(harness.window, 24);
+
+    const viewer = harness.window.document.getElementById('outside-viewer');
+    assert.equal(viewer.dataset.tabcloserMediaState, 'protected');
+    assert.equal(viewer.dataset.tabcloserMediaReason, 'visual');
+
+    const article = harness.window.document.getElementById('detail-article');
+    const text = article.querySelector('[data-testid="tweetText"]');
+    assert.equal(text.dataset.tabcloserQuoted, 'yes', 'the article located by status ID must have its text replaced');
+    assert.ok(text.classList.contains('tabcloser-hidden-text'));
+    assert.ok(article.querySelector('.tabcloser-quote'), 'a quote must replace the post text');
+  } finally {
+    harness.dom.window.close();
+  }
+});
