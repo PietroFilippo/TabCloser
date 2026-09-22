@@ -16,6 +16,7 @@ const staticFiles = [
   'THIRD_PARTY_NOTICES.md',
   'popup.css', 'popup.html', 'popup.js',
   'x-media-utils.js', 'x-metadata.js', 'x-protection-v2.js', 'x-protection-v3.css', 'x-verdict.js',
+  'x-user-controls.js', 'x-interactions.js',
 ];
 async function writeModelAssets() {
   const modelDir = path.join(dist, 'models', 'mobilenet_v2_mid');

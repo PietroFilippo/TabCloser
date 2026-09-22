@@ -330,6 +330,12 @@ button.primary:hover { background: #3c7f3c; }
   animation: toast-in 0.15s ease-out;
 }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.manual-hide-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #383838; }
+.manual-hide-row a { color: #d9c28e; overflow-wrap: anywhere; font-size: 12px; }
+.manual-hide-row button { background: #2b2720; color: #d9c28e; border: 1px solid #65563a; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+.manual-hide-row button:disabled { opacity: .5; cursor: default; }
+#xManualHides { max-height: 300px; overflow: auto; }
+#xManualSummary { cursor: pointer; color: #d9c28e; }
 .tabcloser-toast button {
   background: var(--green-deep);
   color: #fff;

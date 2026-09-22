@@ -21,6 +21,7 @@
     "tabs",
     "scripting",
     "storage",
+    "menus",
     "alarms",
     "webNavigation",
     "webRequest",
@@ -46,6 +47,7 @@
       "x-metadata.js",
       "x-verdict.js",
       "x-media-utils.js",
+      "x-user-controls.js",
       "classifier-runtime.js",
       "background.js"
     ]
@@ -102,7 +104,8 @@
         "x-media-utils.js",
         "sacred-art-list.js",
         "catholic-quotes.js",
-        "x-protection-v2.js"
+        "x-protection-v2.js",
+        "x-interactions.js"
       ],
       "run_at": "document_start"
     }

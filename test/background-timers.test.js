@@ -13,7 +13,7 @@ const rule = (domain, extra = {}) => ({
 // Run the actual background script through its browser event/message seams.
 // Time, storage and tabs are isolated; no real tabs or extension data are touched.
 async function start({ rules = [rule('x.com')], blocks = {}, accumSec = {}, tabs: initialTabs,
-  url = 'https://x.com/home' } = {}) {
+  url = 'https://x.com/home', xProtection = {}, xUserControls = {} } = {}) {
   let now = 100000;
   let activeId = 1;
   let focused = true;
@@ -30,11 +30,12 @@ async function start({ rules = [rule('x.com')], blocks = {}, accumSec = {}, tabs
     TabCloserXMediaUtils: require('../x-media-utils.js'),
     TabCloserXMetadata: require('../x-metadata.js'),
     TabCloserXVerdict: require('../x-verdict.js'),
+    TabCloserXUserControls: require('../x-user-controls.js'),
     TabCloserClassifier: { warmUp() {} },
     browser: {
       storage: { local: {
-        get: async () => structuredClone({ rules, blocks, accumSec }),
-        set: async data => { saved = structuredClone(data); }, remove: async () => {},
+        get: async () => structuredClone({ rules, blocks, accumSec, xProtection, xUserControls }),
+        set: async data => { saved = { ...saved, ...structuredClone(data) }; }, remove: async () => {},
       } },
       runtime: { getURL: value => 'moz-extension://test/' + value, onMessage: event('message') },
       windows: { getLastFocused: async () => ({ id: 1, focused }), onFocusChanged: event('windowFocus') },
@@ -66,7 +67,7 @@ async function start({ rules = [rule('x.com')], blocks = {}, accumSec = {}, tabs
   });
   for (const file of ['common.js', 'background.js']) vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), context);
   await vm.runInContext('bootPromise', context);
-  const send = message => events.message(message);
+  const send = (message, sender) => events.message(message, sender);
   const state = () => send({ type: 'getState' });
   return {
     events, timers, alarms, removed, updates, send, state,
@@ -82,6 +83,38 @@ async function start({ rules = [rule('x.com')], blocks = {}, accumSec = {}, tabs
     },
   };
 }
+
+test('manual hides persist, remain removable when unlocked, and reject removal under either X lock', async () => {
+  const sender = { tab: { id: 1, url: 'https://x.com/home' } };
+  const h = await start();
+  assert.equal((await h.send({ type: 'xControlHide', scope: 'post', key: '123' }, sender)).ok, true);
+  assert.equal(h.saved().xUserControls.posts['123'], 100000);
+  assert.equal((await h.send({ type: 'xControlRemove', scope: 'post', key: '123' }, sender)).ok, true);
+  const locked = await start({ xProtection: { labeled: { enabled: true, lockUntil: 900000 }, revealDailySec: 6 }, xUserControls: { posts: {123: 100000} } });
+  assert.equal((await locked.send({ type: 'xControlRemove', scope: 'post', key: '123' }, sender)).ok, false);
+  assert.equal((await locked.send({ type: 'saveXProtection', labeled: true, model: false, revealDailySec: 9 })).ok, false);
+  assert.equal((await locked.state()).xProtection.revealDailySec, 6);
+  assert.equal((await locked.send({ type: 'saveXProtection', labeled: true, model: false, revealDailySec: 3 })).ok, true);
+});
+
+test('simultaneous reveal requests are serialized and reserve storage before permission is returned', async () => {
+  const h = await start({ xProtection: { revealDailySec: 5 } });
+  const sender = { tab: { id: 1, url: 'https://x.com/home' } };
+  const results = await Promise.all(['123', '456'].map(postId => h.send({ type: 'xControlRevealStart', postId }, sender)));
+  assert.equal(results.filter(result => result.ok).length, 1);
+  assert.equal(h.saved().xUserControls.ledger.usedMs, 3000);
+  assert.ok(h.saved().xUserControls.ledger.lease.token);
+  h.advance(1);
+  await h.send({ type: 'xControlRevealEnd', token: results[0].token, postId: '123' }, sender);
+  assert.equal(h.saved().xUserControls.ledger.usedMs, 1000);
+  await h.focus(false);
+  assert.equal((await h.send({ type: 'xControlRevealStart', postId: '789' }, sender)).ok, false);
+});
+
+test('unrelated tabs cannot access manual hide or reveal state', async () => {
+  const h = await start();
+  assert.equal((await h.send({ type: 'xControlGet' }, { tab: { id: 1, url: 'https://example.com' } })).ok, false);
+});
 
 test('independent site timers pause on tab/window changes and close only matching tabs', async () => {
   const h = await start({ rules: [rule('x.com'), rule('reddit.com')], tabs: [

@@ -30,7 +30,7 @@ Use this when iterating on the source. The add-on unloads on browser restart.
 1. Open `about:debugging` in the browser.
 2. Click **This Firefox** (Zen exposes the same page).
 3. Run `npm install` and `npm run build` from this folder before loading the add-on.
-3. **Load Temporary Add-on…** and select `manifest.json` from this folder.
+4. **Load Temporary Add-on…** and select `manifest.json` from this folder.
 
 ## Usage
 
@@ -40,7 +40,11 @@ Use this when iterating on the source. The add-on unloads on browser restart.
 - Reset the timer or unblock early from the settings page (per-rule buttons).
 - Use "Lock rule" after saving an enabled site to protect its configuration for a chosen number of minutes.
 - A new subdomain rule cannot override a locked parent timer. Existing duplicate rules from older versions remain editable; resolve duplicates before saving further rule changes.
-- Enable the X / Twitter mature-media blocker and use "Lock protection" to prevent it being turned off until the chosen time expires. Media stays hidden until X metadata or local classification resolves it; uncertain/error cases stay protected.
+- Enable either X protection tier and use its lock to prevent disabling it until expiry. X labels protect immediately. The classifier checks images and samples videos; a successful video check takes priority over a noisy thumbnail. Unavailable video checks fall back to the thumbnail, while image-check errors stay covered and retry.
+- Click **Why hidden?** on a replacement to see the reason, checked media type, and available model scores. Scores are model signals, not reliable probabilities.
+- Right-click a post or media on X and choose **TabCloser → hide this post** or **hide this image / video**. Manual choices survive reloads and work with automatic protection off. Remove individual choices under **Manual hides** in settings, or through **Why hidden?**. Active X locks prevent removal.
+- Temporary reveals default **off**. Set a daily allowance in settings (for example, 30 seconds), then hold **Hold to reveal** inside **Why hidden?**. A post gets **three cumulative seconds per local calendar day**, shared across all its images and all tabs. Releasing the button/key, losing focus, navigating, or reaching the deadline hides it again. Videos remain paused and muted. Keyboard: focus the hold button and hold Space or Enter.
+- The background process reserves time before revealing and refunds unused time on a clean early release. Refreshes preserve usage; a crash or extension restart can consume the outstanding reservation. Local midnight replenishes the allowance; changing a setting never clears usage. The daily limit may decrease but cannot increase during an active X lock.
 
 ## Files
 
@@ -51,6 +55,8 @@ Use this when iterating on the source. The add-on unloads on browser restart.
 | `background.js` | Focus tracking, auto-close, block enforcement |
 | `popup.*` | Status popup (no unblock here) |
 | `options.*` | Rule editor + unblock |
+| `x-interactions.js` | Reason panel, manual hides, hold-to-reveal presentation |
+| `x-user-controls.js` | Persistent manual identities and shared reveal accounting |
 | `blocked.*` | Page shown when a blocked site is opened |
 
 ## Notes
@@ -61,5 +67,6 @@ Use this when iterating on the source. The add-on unloads on browser restart.
 - The block redirect causes a brief flash before the blocked page appears.
 - X media classification is entirely local. Media pixels and model scores are not uploaded or persisted.
 - The classifier targets adult sexual content, nudity, pornography, sexualized imagery, and hentai. Other sensitive categories continue to depend on X metadata.
-- Safe media can be conservatively blocked. There is intentionally no reveal action while protection is active.
+- Safe media can still be incorrectly blocked. Optional reveals are temporary presentation overrides and never change a classifier verdict or add a safe exception.
+- Manual post/media identities and daily reveal usage are saved locally; image pixels and diagnostic scores are not persisted by the extension. Removing a manual hide does not override X labels or classifier results.
 - The private evaluation corpus stays outside Git; see `RELEASE_CHECKLIST.md` for qualification and signing gates.

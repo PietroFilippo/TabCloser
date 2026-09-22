@@ -2,7 +2,7 @@
 // marks mature; 'full' additionally classifies images, video posters, and up
 // to three frames from a detached low-bandwidth video probe. The visible X
 // player is never used, decoded, or seeked by TabCloser.
-const xProtectionCoordinatorVersion = 'video-probe-v1';
+const xProtectionCoordinatorVersion = 'media-controls-v1';
 let mode = 'off';
 let settings = { replaceText: false, blockLike: false, sensitivity: 'balanced' };
 let operationId = 0;
@@ -21,6 +21,8 @@ const activeDetachedVideoProbes = new Set();
 const sacredArtByRoot = new WeakMap();
 const blockedPlaybackStateByMedia = new WeakMap();
 const rootRecords = new WeakMap();
+const rootDecisions = new WeakMap();
+const videoDecisionsByTweetId = new Map();
 const verifiedSafeMediaKeys = new Set();
 const warningPattern = /(?:sensitive content|content warning|warning\s*:\s*(?:nudity|adult content)|may contain sensitive|potentially sensitive)/i;
 const maxDirectVideoEntries = 500;
@@ -28,7 +30,7 @@ const mediaSelector = '[data-testid="tweetPhoto"], [data-testid="videoComponent"
 const mediaElementSelector = 'img[src], video, source[src]';
 const statusPathPattern = /\/status\/(\d+)(?:\/(?:photo|video)\/\d+)?/;
 const statusLinkSelector = 'a[href*="/status/"]';
-const extensionUiSelector = '.tabcloser-media-overlay, .tabcloser-lightbox';
+const extensionUiSelector = '.tabcloser-media-overlay, .tabcloser-lightbox, .tabcloser-controls';
 
 const xMetadataDebugPrefix = '[TabCloser DEBUG metadata-v1]';
 
@@ -61,7 +63,9 @@ function statusIdFor(node) {
   const directId = directLink ? statusIdFromHref(directLink.getAttribute('href') || '') : null;
   if (directId) return directId;
   const article = node.closest?.('article');
-  const articleLink = article?.querySelector(statusLinkSelector);
+  const layer = article ? tweetLayerFor(node, article) : null;
+  const articleLink = layer && [...layer.querySelectorAll(statusLinkSelector)]
+    .find(link => tweetLayerFor(link, article) === layer);
   if (articleLink) return statusIdFromHref(articleLink.getAttribute('href') || '');
   return statusIdFromHref(location.pathname);
 }
@@ -480,6 +484,10 @@ function restoreRootPlayback(root) {
 
 function setRootState(root, state, reason) {
   if (!root?.isConnected) return;
+  if (globalThis.TabCloserXInteractions?.manuallyHidden(root)) {
+    state = 'protected';
+    reason = 'manual';
+  }
   root.dataset.tabcloserMediaState = state;
   root.dataset.tabcloserMediaReason = reason || '';
   const host = overlayHostFor(root);
@@ -504,7 +512,7 @@ function setRootState(root, state, reason) {
   // shield. The painting and notice are reserved for confirmed mature
   // verdicts; a failure verdict that will still be retried renders like the
   // pending state so a successful retry never pops artwork in and out.
-  const mature = reason === 'visual' || reason === 'metadata';
+  const mature = reason === 'visual' || reason === 'metadata' || reason === 'manual';
   const willRetry = state === 'protected' && !mature && retryableReason.test(reason || '') &&
     (rootRecords.get(root)?.retries || 0) < retryDelaysMs.length;
   const shieldOnly = state === 'pending' || willRetry;
@@ -513,9 +521,9 @@ function setRootState(root, state, reason) {
     (shieldOnly ? ' tabcloser-media-overlay-pending' : '') +
     (artUrl ? ' tabcloser-media-overlay-art' : '');
   overlay.style.backgroundImage = '';
-  overlay.setAttribute('role', 'img');
+  overlay.setAttribute('role', 'group');
   overlay.setAttribute('aria-live', 'polite');
-  const hiddenLabel = 'Sensitive media hidden';
+  const hiddenLabel = reason === 'manual' ? 'Hidden by you' : mature ? 'Sensitive media hidden' : 'Could not check media';
   overlay.setAttribute('aria-label', shieldOnly ? 'Media is being checked by TabCloser' : hiddenLabel + ' by TabCloser');
   overlay.textContent = '';
   if (artUrl) {
@@ -543,6 +551,7 @@ function setRootState(root, state, reason) {
   if (!existing) host.appendChild(overlay);
   if (state === 'protected' && mature) applyQuoteFor(root);
   for (const player of mediaPlayersWithin(root)) blockMediaPlayback(player);
+  globalThis.TabCloserXInteractions?.decorate(root, state, reason);
 }
 
 function clearAllStates() {
@@ -566,7 +575,10 @@ function protectGroup(root, reason) {
   const layer = tweetLayerFor(root, article);
   const layerRoots = candidateRootsWithin(layer).filter(candidate => tweetLayerFor(candidate, article) === layer);
   const roots = layerRoots.length ? layerRoots : [root];
-  for (const candidate of roots) setRootState(candidate, 'protected', reason);
+  for (const candidate of roots) {
+    if (rootDecisions.has(root)) rootDecisions.set(candidate, rootDecisions.get(root));
+    setRootState(candidate, 'protected', reason);
+  }
 }
 
 function candidateRootsWithin(container) {
@@ -791,6 +803,7 @@ async function sampleDetachedVideoSource(source, control) {
     const strongThreshold = threshold * strongProtectFraction;
     const scores = [];
     const frameDetails = [];
+    let incomplete = false;
     let marginalProtect = null;
 
     const round = value => Math.round(value * 1000) / 1000;
@@ -817,6 +830,7 @@ async function sampleDetachedVideoSource(source, control) {
         if (!probe.isConnected) throw new Error('detached video probe canceled');
         const frameKey = 'direct-video|' + mediaKey + '|t=' + time;
         let result = await classifyPixels(pixelsFromDrawable(probe), frameKey);
+        if (result?.reason !== 'visual' || !Number.isFinite(result.adultScore)) incomplete = true;
         const squashScore = scoreOf(result);
         let frameScore = squashScore;
         let cropScore = null;
@@ -824,6 +838,7 @@ async function sampleDetachedVideoSource(source, control) {
           const cropData = centerCropPixelsFromDrawable(probe);
           if (cropData) {
             const cropResult = await classifyPixels(cropData, frameKey + '|crop');
+            if (cropResult?.reason !== 'visual' || !Number.isFinite(cropResult.adultScore)) incomplete = true;
             cropScore = scoreOf(cropResult);
             frameScore = Math.max(frameScore, cropScore);
             if (matureVerdict(cropResult)) result = cropResult;
@@ -875,7 +890,9 @@ async function sampleDetachedVideoSource(source, control) {
         ...aggregates(),
       };
     }
-    return { verdict: 'safe', reason: 'visual', samplesChecked: scores.length, frames: frameDetails, ...aggregates() };
+    return { verdict: 'safe', reason: incomplete ? 'probe-unavailable' : 'visual', probeError: incomplete ? 'Incomplete frame classification' : null, samplesChecked: scores.length, frames: frameDetails, ...aggregates() };
+  } catch (error) {
+    throw new Error(probe.error?.message || error?.message || 'Video check failed');
   } finally {
     disposeDetachedVideoProbe(probe);
   }
@@ -919,7 +936,7 @@ function classifyDirectVideoSource(source) {
       trimOldestMapEntries(directVideoVerdictCache);
       return result;
     })
-    .catch(() => ({ verdict: 'safe', reason: 'probe-unavailable', samplesChecked: 0 }))
+    .catch(error => ({ verdict: 'safe', reason: 'probe-unavailable', probeError: String(error?.message || error).slice(0, 200), samplesChecked: 0 }))
     .finally(() => {
       if (timeout != null) clearTimeout(timeout);
       if (directVideoProbeInFlight.get(cacheKey) === job) directVideoProbeInFlight.delete(cacheKey);
@@ -983,7 +1000,8 @@ function protectUnsafeResult(root, reason) {
 }
 
 async function classifyRoot(root, fingerprint, token) {
-  const isActive = () => mode === 'full' && root.isConnected && rootRecords.get(root)?.token === token;
+  const isActive = () => mode === 'full' && root.isConnected && rootRecords.get(root)?.token === token &&
+    !globalThis.TabCloserXInteractions?.manuallyHidden(root);
   try {
     ensureClassificationActive(isActive);
     if (metadataProtects(root)) {
@@ -1000,11 +1018,23 @@ async function classifyRoot(root, fingerprint, token) {
     if (root.matches('video')) videos.unshift(root);
     if (!images.length && !videos.length) throw new Error('no classifiable media');
 
+    const isVideo = videos.length > 0 || images.some(image => /\/(?:amplify|ext_tw)_video_thumb\//.test(image.src));
+    let thumbnailVerdict = null;
+    let videoUnavailableReason = '';
+    const recordDecision = (result, source) => rootDecisions.set(root, {
+      source, ...result, sensitivity: settings.sensitivity,
+      threshold: TabCloserXVerdict.presetValues(settings.sensitivity).threshold,
+    });
     for (const image of images) {
       ensureClassificationActive(isActive);
       const result = await classifyImage(image, fingerprint);
       ensureClassificationActive(isActive);
       if (result.verdict !== 'safe') {
+        if (isVideo && result.reason === 'visual') {
+          thumbnailVerdict = result;
+          continue;
+        }
+        recordDecision(result, 'image');
         protectUnsafeResult(root, result.reason || 'visual');
         return;
       }
@@ -1018,21 +1048,22 @@ async function classifyRoot(root, fingerprint, token) {
       const result = await classifyVideoPoster(video, fingerprint, isActive);
       ensureClassificationActive(isActive);
       if (result.verdict !== 'safe') {
-        protectUnsafeResult(root, result.reason || 'visual');
-        return;
+        thumbnailVerdict = result;
       }
     }
-    const directVideoSource = videos.length > 0
+    const directVideoSource = isVideo && (videos.length > 0 || thumbnailVerdict)
       ? await directVideoSourceForRoot(root, true)
       : null;
     ensureClassificationActive(isActive);
     if (directVideoSource) {
       const result = await classifyDirectVideoSource(directVideoSource);
       ensureClassificationActive(isActive);
+      recordDecision({ ...result, thumbnailScore: thumbnailVerdict?.adultScore }, 'video frames');
       xMetadataDebug('direct-video-verdict', {
         statusId: statusIdFor(root),
         verdict: result.verdict,
         reason: result.reason,
+        probeError: result.probeError || null,
         samplesChecked: result.samplesChecked || 0,
         aggregate: result.aggregate || null,
         maxAdultScore: result.maxAdultScore ?? null,
@@ -1048,6 +1079,8 @@ async function classifyRoot(root, fingerprint, token) {
         // verdicts stay local to this mount: they censor here but never enter
         // the session set.
         if (result.reason === 'visual') {
+          videoDecisionsByTweetId.set(statusIdFor(root), rootDecisions.get(root));
+          trimOldestMapEntries(videoDecisionsByTweetId);
           if (result.promote !== false) rememberVisuallyProtectedTweet(statusIdFor(root));
           protectGroup(root, 'visual');
         } else {
@@ -1055,9 +1088,16 @@ async function classifyRoot(root, fingerprint, token) {
         }
         return;
       }
+      // A successfully checked video can overrule a noisy thumbnail. Failed
+      // or incomplete probes never count as evidence to dismiss that thumbnail.
+      if (result.reason === 'visual' && result.samplesChecked >= 3) thumbnailVerdict = null;
+      else videoUnavailableReason = result.probeError || 'Video check incomplete';
     }
-
-
+    if (thumbnailVerdict) {
+      recordDecision({ ...thumbnailVerdict, fallback: directVideoSource ? 'Video check unavailable: ' + videoUnavailableReason : 'No direct video source available' }, 'video thumbnail');
+      protectUnsafeResult(root, 'visual');
+      return;
+    }
     ensureClassificationActive(isActive);
     if (rootFingerprint(root) !== fingerprint) {
       discoverRoot(root);
@@ -1087,7 +1127,7 @@ async function classifyRoot(root, fingerprint, token) {
     }
     setRootState(root, 'safe', 'visual');
   } catch (error) {
-    if (mode === 'full' && root.isConnected && rootRecords.get(root)?.token === token) {
+    if (isActive()) {
       protectUnsafeResult(root, /timeout/i.test(error?.message || '') ? 'timeout' : 'error');
     }
   }
@@ -1126,6 +1166,10 @@ const intersectionObserver = new IntersectionObserver(entries => {
 }, { rootMargin: '300px 0px' });
 
 function discoverRoot(root) {
+  if (root?.isConnected && globalThis.TabCloserXInteractions?.manuallyHidden(root)) {
+    setRootState(root, 'protected', 'manual');
+    return;
+  }
   if (mode === 'off' || !root?.isConnected) return;
   if (mode === 'labeled') {
     // Labeled tier: only X's own mature label hides media; nothing is queued
@@ -1140,6 +1184,7 @@ function discoverRoot(root) {
     return;
   }
   if (visualVerdictProtects(root)) {
+    if (videoDecisionsByTweetId.has(statusIdFor(root))) rootDecisions.set(root, videoDecisionsByTweetId.get(statusIdFor(root)));
     if (root.dataset.tabcloserMediaState !== 'protected') {
       xMetadataDebug('session-verdict-applied', { statusId: statusIdFor(root) });
     }
@@ -1223,6 +1268,7 @@ function scanKnownRootsForMetadata() {
 }
 
 function setProtection(config) {
+  globalThis.TabCloserXInteractions?.stopReveal();
   const modelEnabled = config?.model?.enabled === true;
   const labeledEnabled = modelEnabled || config?.labeled?.enabled === true || config?.enabled === true;
   settings = {
@@ -1251,8 +1297,10 @@ function setProtection(config) {
   directVideoVerdictCache.clear();
   // Settings changes (notably sensitivity) invalidate earlier visual verdicts.
   visuallyProtectedTweetIds.clear();
+  videoDecisionsByTweetId.clear();
   clearAllStates();
   if (mode !== 'off') discoverWithin(document);
+  globalThis.TabCloserXInteractions?.refresh();
 }
 
 
@@ -1262,10 +1310,10 @@ function requeueSafeRootsForDirectVideoSources(tweetIds) {
   document.querySelectorAll('[data-tabcloser-media-state]').forEach(node => roots.add(mediaRootFor(node) || node));
   for (const root of roots) {
     const tweetId = statusIdFor(root);
-    if (!mediaElementsWithin(root, 'video').length) continue;
+    if (!mediaElementsWithin(root, 'video').length && rootDecisions.get(root)?.source !== 'video thumbnail') continue;
     if (!tweetId || !tweetIds.has(tweetId)) continue;
     const record = rootRecords.get(root);
-    if (root.dataset.tabcloserMediaState !== 'safe' && record?.status !== 'safe') continue;
+    if (root.dataset.tabcloserMediaState !== 'safe' && record?.status !== 'safe' && rootDecisions.get(root)?.source !== 'video thumbnail') continue;
     const verificationKey = stableMediaVerificationKey(root);
     if (verificationKey) verifiedSafeMediaKeys.delete(verificationKey);
     if (record) rootRecords.set(root, { ...record, status: 'stale' });
@@ -1300,7 +1348,7 @@ function addSensitiveMetadata(metadata) {
 }
 
 function blockPendingOrProtectedActivation(event) {
-  if (mode === 'off' || !(event.target instanceof Element)) return;
+  if (!(event.target instanceof Element) || event.target.closest('.tabcloser-controls')) return;
   // Liking a censored post would endorse content the user never saw.
   if (settings.blockLike) {
     const likeButton = event.target.closest('[data-testid="like"]');
@@ -1325,7 +1373,7 @@ function blockPendingOrProtectedActivation(event) {
     ? root
     : root.querySelector('[data-tabcloser-media-state="protected"]');
   const reason = stateRoot?.dataset.tabcloserMediaReason;
-  if (stateRoot?.dataset.tabcloserMediaState === 'protected' && (reason === 'visual' || reason === 'metadata')) {
+  if (stateRoot?.dataset.tabcloserMediaState === 'protected' && (reason === 'visual' || reason === 'metadata' || reason === 'manual')) {
     const url = sacredArtUrlFor(stateRoot);
     if (url) openLightbox(url);
   }
@@ -1350,7 +1398,8 @@ document.addEventListener('keydown', event => {
   }
 }, true);
 document.addEventListener('play', event => {
-  if (mode === 'off' || !(event.target instanceof HTMLMediaElement)) return;
+  if (!(event.target instanceof HTMLMediaElement)) return;
+  if (event.target.closest('[data-tabcloser-manual-post]')) { blockMediaPlayback(event.target); return; }
   const root = mediaRootFor(event.target);
   const rootState = root?.dataset.tabcloserMediaState;
   // Full mode is fail-closed (only verified-safe may play); labeled mode only
@@ -1382,6 +1431,11 @@ new MutationObserver(mutations => {
   attributes: true,
   attributeFilter: ['src', 'srcset', 'poster', 'href'],
 });
+
+globalThis.TabCloserXCoordinator = {
+  decisionFor: root => rootDecisions.get(root),
+  invalidate(root) { const record = rootRecords.get(root); if (record) record.status = 'stale'; },
+};
 
 browser.storage.local.get('xProtection')
   .then(data => setProtection(data.xProtection))

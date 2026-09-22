@@ -24,6 +24,8 @@ async function startCoordinator(html, {
   config,
   classify,
   prepare,
+  interactions = false,
+  controlMessage,
   url = 'https://x.com/search?q=test&src=typed_query&f=media',
 } = {}) {
   const dom = new JSDOM(html, {
@@ -34,7 +36,7 @@ async function startCoordinator(html, {
   const classificationMessages = [];
   const debugMessages = [];
   window.console.debug = (...args) => debugMessages.push(args);
-  let contentMessageListener = null;
+  const contentMessageListeners = [];
 
   // jsdom deliberately omits layout/media playback. These shims model only
   // the browser seams the coordinator needs for discovery and classification.
@@ -103,9 +105,10 @@ async function startCoordinator(html, {
     runtime: {
       getURL: value => 'moz-extension://tabcloser/' + value,
       onMessage: {
-        addListener(listener) { contentMessageListener = listener; },
+        addListener(listener) { contentMessageListeners.push(listener); },
       },
       async sendMessage(message) {
+        if (message.type.startsWith('xControl')) return controlMessage ? controlMessage(message) : { ok: true, posts: [], media: [], revealDailySec: 0 };
         classificationMessages.push(message);
         return classify ? classify(message) : { verdict: 'safe', reason: 'visual' };
       },
@@ -114,6 +117,7 @@ async function startCoordinator(html, {
 
   prepare?.(window);
   window.eval(coordinator);
+  if (interactions) window.eval(readFileSync(path.join(root, 'x-interactions.js'), 'utf8'));
   await flush(window);
 
   return {
@@ -121,8 +125,8 @@ async function startCoordinator(html, {
     dom,
     debugMessages,
     async sendContentMessage(message) {
-      assert.ok(contentMessageListener, 'content-script message listener was not registered');
-      contentMessageListener(message);
+      assert.ok(contentMessageListeners.length, 'content-script message listener was not registered');
+      for (const listener of contentMessageListeners) listener(message);
       await flush(window);
     },
     window,
@@ -1191,6 +1195,161 @@ function directVideoVerdicts(harness) {
     .map(args => { try { return JSON.parse(args[1]); } catch { return null; } })
     .filter(entry => entry?.event === 'direct-video-verdict');
 }
+
+test('a false-positive thumbnail waits for video evidence, including a duplicate IMG poster', async () => {
+  const tweetId = '2101422716305744244';
+  const source = 'https://video.twimg.com/amplify_video/2101422464118956032/vid/low.mp4';
+  const h = await directVideoHarness(tweetId, source, message => message.kind === 'url'
+    ? { verdict: 'protect', reason: 'visual', adultScore: 0.830412 }
+    : { verdict: 'safe', reason: 'visual', adultScore: 0.01 });
+  try {
+    const root = h.window.document.getElementById('scored-video-root');
+    const img = h.window.document.createElement('img');
+    img.src = root.querySelector('video').poster;
+    root.appendChild(img);
+    await sendDirectVideoMetadata(h, tweetId, source);
+    assert.equal(root.dataset.tabcloserMediaState, 'safe');
+    assert.ok(h.classificationMessages.some(message => message.kind === 'frame'));
+  } finally { h.dom.window.close(); }
+});
+
+test('a flagged thumbnail stays protected when frame classification is incomplete', async () => {
+  const tweetId = '2101422716305744244';
+  const source = 'https://video.twimg.com/amplify_video/2101422464118956032/vid/low.mp4';
+  const h = await directVideoHarness(tweetId, source, message => message.kind === 'url'
+    ? { verdict: 'protect', reason: 'visual', adultScore: 0.83 }
+    : { verdict: 'protect', reason: 'error' });
+  try {
+    await sendDirectVideoMetadata(h, tweetId, source);
+    const root = h.window.document.getElementById('scored-video-root');
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.equal(h.window.TabCloserXCoordinator.decisionFor(root).source, 'video thumbnail');
+  } finally { h.dom.window.close(); }
+});
+
+const controlFixture = '<article><a href="/example/status/123"><time>1h</time></a>' +
+  '<div data-testid="tweetText">Original text</div><a href="/example/status/123/photo/1">' +
+  '<div id="controlled-image" data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/fixture.jpg"></div></a></article>';
+
+test('manual image hides work with automatic protection off, persist on remount, and undo restores', async () => {
+  const key = '123|https://pbs.twimg.com/media/fixture.jpg';
+  const h = await startCoordinator(controlFixture, { interactions: true, config: {},
+    controlMessage: () => ({ ok: true, posts: [], media: [key], revealDailySec: 0 }) });
+  try {
+    assert.equal(h.window.document.getElementById('controlled-image').dataset.tabcloserMediaReason, 'manual');
+    h.window.document.body.innerHTML = controlFixture;
+    await flush(h.window, 60);
+    assert.equal(h.window.document.getElementById('controlled-image').dataset.tabcloserMediaReason, 'manual');
+    await h.sendContentMessage({ type: 'xControlsChanged', snapshot: { posts: [], media: [] } });
+    assert.equal(h.window.document.querySelector('.tabcloser-media-overlay'), null);
+  } finally { h.dom.window.close(); }
+});
+
+test('manual whole-post hides include text-only posts and isolate quoted posts', async () => {
+  const h = await startCoordinator('<article id="outer"><a href="/a/status/111">Outer</a><div data-testid="tweetText">Outer text</div>' +
+    '<div id="quoted" role="link"><a href="/b/status/222">Quoted</a><div data-testid="tweetText">Quoted text</div></div></article>', {
+    interactions: true, config: {}, controlMessage: () => ({ ok: true, posts: ['222'], media: [] }),
+  });
+  try {
+    assert.equal(h.window.document.getElementById('quoted').dataset.tabcloserMediaReason, 'manual');
+    assert.equal(h.window.document.getElementById('outer').dataset.tabcloserMediaState, undefined);
+  } finally { h.dom.window.close(); }
+});
+
+test('Why hidden exposes the actual image score and does not open the painting viewer', async () => {
+  const h = await startCoordinator(controlFixture, { interactions: true,
+    classify: () => ({ verdict: 'protect', reason: 'visual', adultScore: 0.83 }) });
+  try {
+    let delegatedClicks = 0;
+    h.window.document.addEventListener('click', () => { delegatedClicks++; });
+    const click = new h.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    h.window.document.querySelector('.tabcloser-media-actions button').dispatchEvent(click);
+    assert.equal(click.defaultPrevented, true, 'the surrounding X link must not navigate');
+    assert.equal(delegatedClicks, 0, 'X delegated handlers must not receive the control click');
+    assert.match(h.window.document.querySelector('.tabcloser-control-panel').textContent, /image.*0\.830.*0\.20/);
+    assert.equal(h.window.document.querySelector('.tabcloser-lightbox'), null);
+  } finally { h.dom.window.close(); }
+});
+
+test('hold reveals presentation only, then rehides on deadline without changing the verdict', async () => {
+  const messages = [];
+  const h = await startCoordinator(controlFixture, { interactions: true,
+    config: { model: { enabled: true }, replaceText: true },
+    prepare(window) {
+      Object.defineProperty(window.document, 'visibilityState', { value: 'visible' });
+      window.document.hasFocus = () => true;
+      window.TabCloserQuotes = [{ text: 'Test quote', author: 'Test Author' }];
+    },
+    classify: () => ({ verdict: 'protect', reason: 'visual', adultScore: 0.83 }),
+    controlMessage(message) {
+      messages.push(message);
+      if (message.type === 'xControlRevealStart') return { ok: true, token: 'test', postId: '123', durationMs: 150, deadline: Date.now() + 150 };
+      return { ok: true, posts: [], media: [], revealDailySec: 30, dailyMs: 30000, postMs: 3000 };
+    },
+  });
+  try {
+    h.window.document.querySelector('.tabcloser-media-actions button').click();
+    await flush(h.window, 3);
+    const hold = [...h.window.document.querySelectorAll('button')].find(b => b.textContent === 'Hold to reveal');
+    hold.dispatchEvent(new h.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    await flush(h.window, 2);
+    const root = h.window.document.getElementById('controlled-image');
+    assert.ok(root.hasAttribute('data-tabcloser-revealed'));
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.ok(h.window.document.querySelector('[data-tabcloser-text-revealed]'));
+    // Wait past the actual 150ms deadline, independently of jsdom's timer clamping.
+    await new Promise(resolve => h.window.setTimeout(resolve, 220));
+    assert.equal(root.hasAttribute('data-tabcloser-revealed'), false);
+    assert.equal(root.dataset.tabcloserMediaState, 'protected');
+    assert.ok(messages.some(message => message.type === 'xControlRevealEnd'));
+    hold.dispatchEvent(new h.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    await flush(h.window, 2);
+    assert.ok(root.hasAttribute('data-tabcloser-revealed'));
+    h.window.dispatchEvent(new h.window.Event('blur'));
+    assert.equal(root.hasAttribute('data-tabcloser-revealed'), false, 'losing window focus hides immediately');
+  } finally { h.dom.window.close(); }
+});
+
+test('manually hiding one image during classification does not spread to its siblings', async () => {
+  let finish;
+  const key = '123|https://pbs.twimg.com/media/fixture.jpg';
+  const h = await startCoordinator(controlFixture.replace('</article>', '<div id="sibling" data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/safe.jpg"></div></article>'), {
+    interactions: true, classify: message => message.url?.includes('fixture.jpg')
+      ? new Promise(resolve => { finish = resolve; }) : { verdict: 'safe', reason: 'visual' },
+  });
+  try {
+    await h.sendContentMessage({ type: 'xControlsChanged', snapshot: { posts: [], media: [key] } });
+    finish({ verdict: 'safe', reason: 'visual' });
+    await flush(h.window);
+    assert.equal(h.window.document.getElementById('controlled-image').dataset.tabcloserMediaReason, 'manual');
+    assert.equal(h.window.document.getElementById('sibling').dataset.tabcloserMediaState, 'safe');
+  } finally { h.dom.window.close(); }
+});
+
+test('releasing while a reveal request is in flight never exposes content after permission arrives', async () => {
+  let grant;
+  const messages = [];
+  const h = await startCoordinator(controlFixture, { interactions: true,
+    prepare(window) { Object.defineProperty(window.document, 'visibilityState', { value: 'visible' }); window.document.hasFocus = () => true; },
+    classify: () => ({ verdict: 'protect', reason: 'visual', adultScore: 0.83 }),
+    controlMessage(message) {
+      messages.push(message);
+      if (message.type === 'xControlRevealStart') return new Promise(resolve => { grant = resolve; });
+      return { ok: true, posts: [], media: [], revealDailySec: 30, dailyMs: 30000, postMs: 3000 };
+    },
+  });
+  try {
+    h.window.document.querySelector('.tabcloser-media-actions button').click();
+    await flush(h.window, 3);
+    const hold = [...h.window.document.querySelectorAll('button')].find(b => b.textContent === 'Hold to reveal');
+    hold.dispatchEvent(new h.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    h.window.document.dispatchEvent(new h.window.Event('pointerup', { bubbles: true }));
+    grant({ ok: true, token: 'late', postId: '123', durationMs: 3000, deadline: Date.now() + 3000 });
+    await flush(h.window, 3);
+    assert.equal(h.window.document.querySelector('[data-tabcloser-revealed]'), null);
+    assert.ok(messages.some(message => message.type === 'xControlRevealEnd' && message.token === 'late'));
+  } finally { h.dom.window.close(); }
+});
 
 test('borderline frame scores aggregate to a mature verdict without extra sampling', async () => {
   const tweetId = '3055555555555555555';

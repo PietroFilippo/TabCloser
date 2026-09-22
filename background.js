@@ -10,6 +10,7 @@ const state = {
     model: { enabled: false, lockUntil: null, sensitivity: 'balanced' },
     replaceText: false, // swap censored post text for a Catholic quote
     blockLike: false,   // prevent liking posts whose media is censored
+    revealDailySec: 0,  // opt-in; shared across all X tabs
   },
   focus: { tabId: null, domain: null, enteredAt: null }, // not persisted
 };
@@ -18,6 +19,7 @@ let closeTimer = null;
 let bootPromise = null;
 let stateQueue = Promise.resolve();
 let closeTimerGeneration = 0;
+let xUserControls;
 
 // Browser notifications can overlap across awaits. Serialize timer/rule state,
 // including settings messages, without putting media inference on this queue.
@@ -36,7 +38,8 @@ function finiteOrNull(value) {
 }
 
 async function loadState() {
-  const data = await browser.storage.local.get(['rules', 'accumSec', 'blocks', 'xProtection']);
+  const data = await browser.storage.local.get(['rules', 'accumSec', 'blocks', 'xProtection', 'xUserControls']);
+  xUserControls = TabCloserXUserControls.normalize(data.xUserControls);
   state.rules = data.rules ?? [];
   state.accumSec = data.accumSec ?? {};
   state.blocks = data.blocks ?? {};
@@ -56,6 +59,7 @@ async function loadState() {
     },
     replaceText: raw.replaceText === true,
     blockLike: raw.blockLike === true,
+    revealDailySec: Number.isInteger(raw.revealDailySec) ? Math.max(0, Math.min(3600, raw.revealDailySec)) : 0,
   };
   // Obsolete learning data is optional cleanup and must never abort startup.
   browser.storage.local.remove(['xSensitiveTweetCache', 'xRestrictedAuthorCache']).catch(() => {});
@@ -64,7 +68,7 @@ async function loadState() {
 // Higher rank censors more; loosening is refused while the model tier is locked.
 const SENSITIVITY_RANK = { lenient: 0, balanced: 1, strict: 2 };
 
-const xContentScriptVersion = 'video-probe-v1';
+const xContentScriptVersion = 'media-controls-v1';
 const xTabUrlPatterns = [
   '*://x.com/*',
   '*://*.x.com/*',
@@ -80,6 +84,7 @@ const xContentScriptFiles = [
   'sacred-art-list.js',
   'catholic-quotes.js',
   'x-protection-v2.js',
+  'x-interactions.js',
 ];
 
 async function persist() {
@@ -616,6 +621,9 @@ async function classifyXMedia(msg, sender) {
         // Frame callers aggregate borderline scores across a video's frames;
         // a single-frame verdict alone under-detects adult videos.
         adultScore: Number.isFinite(classified.adultScore) ? classified.adultScore : null,
+        scores: classified.scores,
+        sensitivity,
+        threshold: TabCloserXVerdict.presetValues(sensitivity).threshold,
         modelVersion: TabCloserXVerdict.MODEL_VERSION,
       };
       xClassifierCache.set(cacheKey, result);
@@ -642,8 +650,83 @@ async function classifyXMedia(msg, sender) {
   }
 }
 
+// === Manual choices and reveal allowance (all writes use stateQueue) ===
+function xControlsLocked() {
+  return isLockActive(state.xProtection.labeled.lockUntil) || isLockActive(state.xProtection.model.lockUntil);
+}
+
+function xControlSnapshot(postId) {
+  const remaining = TabCloserXUserControls.remaining(xUserControls, state.xProtection.revealDailySec, postId, Date.now());
+  return {
+    posts: Object.keys(xUserControls.posts), media: Object.keys(xUserControls.media),
+    revealDailySec: state.xProtection.revealDailySec, locked: xControlsLocked(), ...remaining,
+  };
+}
+
+async function notifyXControls() {
+  const snapshot = xControlSnapshot();
+  const tabs = await browser.tabs.query({ url: xTabUrlPatterns });
+  await Promise.all(tabs.map(tab => browser.tabs.sendMessage(tab.id, { type: 'xControlsChanged', snapshot }).catch(() => {})));
+}
+
+async function handleXControlMessage(msg, sender) {
+  const fromX = Number.isInteger(sender?.tab?.id) && isXPageUrl(sender?.tab?.url || sender.url || '');
+  const fromSettings = sender?.url?.split(/[?#]/)[0] === browser.runtime.getURL('options.html');
+  if (!fromX && !fromSettings) return { ok: false, error: 'Unavailable outside X or TabCloser settings.' };
+  if (msg.type === 'xControlGet') return { ok: true, ...xControlSnapshot(msg.postId) };
+  if (msg.type === 'xControlHide' || msg.type === 'xControlRemove') {
+    const valid = msg.scope === 'post' ? TabCloserXUserControls.validPost(msg.key) : msg.scope === 'media' && TabCloserXUserControls.validMedia(msg.key);
+    if (!valid) return { ok: false, error: 'This item has no stable post or media identity.' };
+    const entries = msg.scope === 'post' ? xUserControls.posts : xUserControls.media;
+    if (msg.type === 'xControlRemove') {
+      if (xControlsLocked()) return { ok: false, error: 'Manual hides cannot be removed while X protection is locked.' };
+      delete entries[msg.key];
+    } else {
+      if (!fromX) return { ok: false, error: 'Choose the item on X.' };
+      if (Object.keys(entries).length >= 5000 && entries[msg.key] == null) return { ok: false, error: 'The manual hide list is full. Manage it in settings.' };
+      entries[msg.key] = Date.now();
+    }
+    await browser.storage.local.set({ xUserControls });
+    await notifyXControls();
+    return { ok: true, ...xControlSnapshot() };
+  }
+  if (msg.type === 'xControlRevealStart') {
+    if (!fromX) return { ok: false, error: 'Reveal is available only on X.' };
+    const win = await browser.windows.getLastFocused();
+    const [active] = await browser.tabs.query({ active: true, windowId: win.id });
+    if (!win.focused || active?.id !== sender.tab.id) return { ok: false, error: 'Keep the X tab focused to reveal.' };
+    const result = TabCloserXUserControls.begin(xUserControls, {
+      postId: msg.postId, tabId: sender.tab.id, limitSec: state.xProtection.revealDailySec,
+      now: Date.now(), token: uuid(),
+    });
+    if (result.ok) await browser.storage.local.set({ xUserControls });
+    return result;
+  }
+  if (msg.type === 'xControlRevealEnd') {
+    if (fromX && TabCloserXUserControls.end(xUserControls, { token: msg.token, tabId: sender.tab.id, now: Date.now() })) {
+      await browser.storage.local.set({ xUserControls });
+    }
+    return { ok: true, ...xControlSnapshot(msg.postId) };
+  }
+  return { ok: false, error: 'Unknown control.' };
+}
+
+// Menus persist across MV3 event-page restarts; create only on installation/update.
+browser.runtime.onInstalled?.addListener(async () => {
+  await browser.menus.removeAll();
+  browser.menus.create({ id: 'tabcloser-hide-post', title: 'TabCloser: hide this post', contexts: ['all'], documentUrlPatterns: xTabUrlPatterns });
+  browser.menus.create({ id: 'tabcloser-hide-media', title: 'TabCloser: hide this image / video', contexts: ['all'], documentUrlPatterns: xTabUrlPatterns });
+});
+browser.menus?.onClicked.addListener((info, tab) => {
+  if (!['tabcloser-hide-post', 'tabcloser-hide-media'].includes(info.menuItemId) || !Number.isInteger(tab?.id)) return;
+  browser.tabs.sendMessage(tab.id, {
+    type: 'xManualHideSelection', scope: info.menuItemId === 'tabcloser-hide-post' ? 'post' : 'media',
+  }, { frameId: info.frameId || 0 }).catch(() => {});
+});
+
 // === Messages from popup / options ===
 async function handleMessage(msg, sender) {
+  if (msg.type.startsWith('xControl')) return handleXControlMessage(msg, sender);
   switch (msg.type) {
     case 'getState': {
       // include in-flight focus seconds so UI reads live time
@@ -658,6 +741,7 @@ async function handleMessage(msg, sender) {
         accumSec: pendingAccum,
         blocks: state.blocks,
         xProtection: state.xProtection,
+        xUserControls: xControlSnapshot(),
         focus: { ...state.focus },
         now: Date.now(),
       };
@@ -733,6 +817,14 @@ async function handleMessage(msg, sender) {
       const modelEnabled = msg.model === true;
       const labeledEnabled = msg.labeled === true || modelEnabled;
       const current = state.xProtection;
+      if (msg.revealDailySec != null) {
+        if (!Number.isInteger(msg.revealDailySec) || msg.revealDailySec < 0 || msg.revealDailySec > 3600) {
+          return { ok: false, error: 'Choose a daily allowance from 0 to 3600 seconds.' };
+        }
+        if (xControlsLocked() && msg.revealDailySec > current.revealDailySec) {
+          return { ok: false, error: 'The reveal allowance cannot increase while X protection is locked.' };
+        }
+      }
       if (current.labeled.enabled && !labeledEnabled && isLockActive(current.labeled.lockUntil)) {
         return { ok: false, error: 'X-label protection is locked until ' + new Date(current.labeled.lockUntil).toLocaleString() + '.' };
       }
@@ -749,11 +841,13 @@ async function handleMessage(msg, sender) {
       }
       current.labeled.enabled = labeledEnabled;
       current.model.enabled = modelEnabled;
+      if (msg.revealDailySec != null) current.revealDailySec = msg.revealDailySec;
       if (typeof msg.replaceText === 'boolean') current.replaceText = msg.replaceText;
       if (typeof msg.blockLike === 'boolean') current.blockLike = msg.blockLike;
       if (modelEnabled) TabCloserClassifier.warmUp();
       await persist();
       await notifyXProtection();
+      await notifyXControls();
       return { ok: true };
     }
     case 'lockXProtection': {

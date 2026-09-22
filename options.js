@@ -12,6 +12,11 @@ const $xModel = document.getElementById('xModelEnabled');
 const $xSensitivityRadios = [...document.querySelectorAll('input[name="xSensitivity"]')];
 const $xReplaceText = document.getElementById('xReplaceText');
 const $xBlockLike = document.getElementById('xBlockLike');
+const $xReveal = document.getElementById('xRevealDailySec');
+const $xRevealStatus = document.getElementById('xRevealStatus');
+const $xManualHides = document.getElementById('xManualHides');
+let manualListKey = '';
+let revealDraft = false;
 const sensitivityRank = { lenient: 0, balanced: 1, strict: 2 };
 const $xModelLockAmount = document.getElementById('xModelLockAmount');
 const $xModelLockUnit = document.getElementById('xModelLockUnit');
@@ -378,6 +383,11 @@ function renderXProtection() {
 
   $xReplaceText.checked = config.replaceText === true;
   $xBlockLike.checked = config.blockLike === true;
+  if (!revealDraft) $xReveal.value = config.revealDailySec || 0;
+  const controls = snapshot.xUserControls || { posts: [], media: [], dailyMs: 0 };
+  $xRevealStatus.textContent = (controls.dailyMs / 1000).toFixed(1) + 's remaining today.' +
+    (labeledLocked || modelLocked ? ' Locked: the allowance may only decrease.' : '');
+  renderManualHides(controls);
 
   const sensitivity = sensitivityRank[model.sensitivity] != null ? model.sensitivity : 'balanced';
   for (const radio of $xSensitivityRadios) {
@@ -387,6 +397,43 @@ function renderXProtection() {
       (modelLocked && sensitivityRank[radio.value] < sensitivityRank[sensitivity]);
   }
 }
+
+function renderManualHides(controls) {
+  const key = JSON.stringify([controls.posts, controls.media, controls.locked]);
+  if (key === manualListKey) return;
+  manualListKey = key;
+  const entries = [...(controls.posts || []).map(key => ({ scope: 'post', key })),
+    ...(controls.media || []).map(key => ({ scope: 'media', key }))];
+  document.getElementById('xManualSummary').textContent = entries.length + ' saved hide' + (entries.length === 1 ? '' : 's');
+  $xManualHides.replaceChildren();
+  for (const entry of entries) {
+    const postId = entry.key.split('|')[0];
+    const row = el('div', { class: 'manual-hide-row' }, [
+      el('a', { href: 'https://x.com/i/status/' + postId, target: '_blank', rel: 'noopener noreferrer' }, (entry.scope === 'post' ? 'Post ' : 'Media in post ') + postId),
+      el('button', { type: 'button', disabled: controls.locked }, 'Remove'),
+    ]);
+    if (entry.scope === 'media') row.title = entry.key.slice(entry.key.indexOf('|') + 1);
+    row.querySelector('button').addEventListener('click', async () => {
+      const result = await browser.runtime.sendMessage({ type: 'xControlRemove', ...entry });
+      if (!result?.ok) showSaveError(result?.error);
+      await refreshSnapshot(); renderXProtection();
+    });
+    $xManualHides.appendChild(row);
+  }
+}
+
+$xReveal.addEventListener('input', () => { revealDraft = true; });
+document.getElementById('saveXReveal').addEventListener('click', async () => {
+  if (!$xReveal.value.trim() || !$xReveal.checkValidity()) return showSaveError('Choose a whole number from 0 to 3600.');
+  const result = await browser.runtime.sendMessage({
+    type: 'saveXProtection', labeled: $xLabeled.checked, model: $xModel.checked,
+    revealDailySec: Number($xReveal.value),
+  });
+  if (!result?.ok) return showSaveError(result?.error);
+  revealDraft = false;
+  $save.textContent = 'Reveal allowance saved.';
+  await refreshSnapshot(); renderXProtection();
+});
 
 async function saveXProtection(labeledEnabled, modelEnabled, sensitivity) {
   const message = {

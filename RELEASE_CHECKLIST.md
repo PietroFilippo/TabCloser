@@ -19,7 +19,13 @@
 - Repeat known misses with VPN enabled and disabled.
 - Confirm X-labelled media blocks without waiting for local inference.
 - Confirm safe media remains hidden while pending and becomes visible only after a safe verdict.
-- Confirm unsafe, borderline, timeout, corrupt-model, offline, unsupported-video, and CORS failures remain protected.
+- Confirm X-labelled and model-flagged media remain protected. Image-check failures should stay covered and retry. Unavailable/incomplete video checks must retain a flagged thumbnail; absent/unreadable thumbnails alone do not protect a video.
+- Recheck the Coltrane false-positive post `2101422716305744244`: a thumbnail score near 0.83 must no longer end the check before video sampling. Verify its real sampled frames as well as known mature-video cases; mocked safe-frame tests do not establish corpus accuracy.
+- Check Why hidden for X labels, individual images, video frames, thumbnail fallback, manual choices, and failures. Clicking controls must not navigate or open the painting viewer.
+- Right-click-hide one image and a whole text-only post. Verify persistence, timeline/detail views, quoted-post isolation, removal, and automatic protection off. Locks must prevent removing manual hides.
+- Configure 4 seconds/day and reveal two different posts: at most 3 seconds on the first and 1 on the second. Repeat a hold after early release, refresh, restart, and use concurrent tabs. No action may reset usage except the next local calendar day.
+- During a reveal test release, blur, tab changes, navigation, DOM remounts, and the deadline. Text and media must rehide; videos must never autoplay. Check pointer and keyboard holds.
+- Confirm an active X lock prevents increasing/enabling the reveal allowance but allows lowering it. Disabling/re-enabling never refills the allowance.
 - Confirm disabling unlocked protection restores pending/protected DOM and a lock prevents disabling.
 - Confirm scrolling and tab switching remain responsive with multiple visible media items.
 

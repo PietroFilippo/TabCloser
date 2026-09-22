@@ -152,3 +152,62 @@
   font-style: normal !important;
   margin-top: 4px !important;
 }
+
+/* These controls remain independent from the artwork and X's navigation. */
+.tabcloser-controls {
+  color: #ece8df !important;
+  font: 13px/1.5 system-ui, sans-serif !important;
+  text-shadow: none !important;
+  pointer-events: auto !important;
+}
+.tabcloser-controls button {
+  appearance: none !important;
+  background: #292a2e !important;
+  border: 1px solid #6c6556 !important;
+  border-radius: 7px !important;
+  color: #fff !important;
+  cursor: pointer !important;
+  font: 600 12px/1.4 system-ui, sans-serif !important;
+  padding: 7px 11px !important;
+  margin: 3px !important;
+  touch-action: none !important;
+}
+.tabcloser-controls button:hover { background: #414039 !important; }
+.tabcloser-controls button:focus-visible { outline: 2px solid #e9c77c !important; outline-offset: 2px !important; }
+.tabcloser-controls button:disabled { opacity: .5 !important; cursor: default !important; }
+.tabcloser-media-actions { position: absolute !important; top: 8px !important; right: 8px !important; z-index: 3 !important; }
+.tabcloser-control-panel {
+  position: fixed !important;
+  bottom: 24px !important;
+  right: 24px !important;
+  width: 340px !important;
+  max-width: calc(100vw - 64px) !important;
+  max-height: 75vh !important;
+  overflow: auto !important;
+  padding: 18px !important;
+  border: 1px solid #8c7950 !important;
+  border-radius: 12px !important;
+  background: #17191d !important;
+  box-shadow: 0 12px 40px #0009 !important;
+  z-index: 2147483647 !important;
+}
+.tabcloser-control-panel > strong { font-size: 16px !important; margin-right: 18px !important; }
+.tabcloser-control-panel p { margin: 12px 0 !important; }
+.tabcloser-control-note { color: #b3b6be !important; }
+[data-tabcloser-manual-post] { min-height: 240px !important; position: relative !important; }
+
+/* Verdicts remain protected. CSS clips the reveal at its deadline even if a
+   busy page delays the JS cleanup; returning to the tab never resumes it. */
+[data-tabcloser-revealed] > :not(.tabcloser-media-overlay) {
+  filter: none !important;
+  transform: none !important;
+}
+[data-tabcloser-overlay-revealed], [data-tabcloser-quote-revealed] { visibility: hidden !important; pointer-events: none !important; }
+.tabcloser-hidden-text[data-tabcloser-text-revealed] { display: block !important; }
+[data-tabcloser-revealed], [data-tabcloser-text-revealed] {
+  animation: tabcloser-peek-window var(--tabcloser-peek-ms) step-end forwards !important;
+}
+@keyframes tabcloser-peek-window {
+  from { clip-path: inset(0); }
+  to { clip-path: inset(50%); }
+}
