@@ -2,18 +2,20 @@
 // changes presentation; it never marks media safe or resumes video playback.
 (() => {
   let snapshot = { posts: [], media: [], revealDailySec: 0, locked: false };
-  let posts = new Set(), media = new Set();
+  let posts = new Set(), texts = new Set(), media = new Set();
   let contextTarget = null, panel = null, panelRoot = null, allowanceText = null, holdButton = null;
   let holding = false, requestGeneration = 0, lease = null, revealTimer = null, refreshTimer = null;
   let allowanceTimer = null;
   let revealStarted = 0, revealDuration = 0, revealPage = '';
   const marked = new Set();
   const manualRoots = new Set();
+  const manualTexts = new Map();
   const send = message => browser.runtime.sendMessage(message);
-  const seconds = ms => (Math.max(0, ms || 0) / 1000).toFixed(1);
+  const seconds = ms => ms > 0 && ms < 100 ? '<0.1' : (Math.max(0, ms || 0) / 1000).toFixed(1);
+  const textHidden = root => root?.matches?.('[data-testid="tweetText"]') && (posts.has(statusIdFor(root)) || texts.has(statusIdFor(root)));
 
   function manuallyHidden(root) {
-    return posts.has(statusIdFor(root)) || media.has(stableMediaVerificationKey(root));
+    return textHidden(root) || posts.has(statusIdFor(root)) || media.has(stableMediaVerificationKey(root));
   }
   function button(label, action) {
     const element = document.createElement('button');
@@ -33,8 +35,9 @@
     }
   }
   function explanation(root) {
+    if (textHidden(root)) return 'You chose to hide this post’s text. The choice is saved on this device.';
     const reason = root.dataset.tabcloserMediaReason;
-    if (reason === 'manual') return 'You chose to hide this ' + (posts.has(statusIdFor(root)) ? 'post' : 'image or video') + '. The choice is saved on this device.';
+    if (reason === 'manual') return 'You chose to hide this image or video. The choice is saved on this device.';
     if (reason === 'metadata') return 'X supplied a sensitive-content label or warning for this media, post, or author.';
     if (reason !== 'visual') return 'The media could not be checked (' + (reason || 'unknown error') + '). It stays covered while TabCloser retries when possible.';
     const decision = TabCloserXCoordinator.decisionFor(root);
@@ -42,6 +45,7 @@
     let text = 'The on-device model flagged the ' + decision.source + '.';
     if (Number.isFinite(decision.adultScore)) text += ' Score ' + decision.adultScore.toFixed(3) + ', cutoff ' + decision.threshold.toFixed(2) + ' (' + decision.sensitivity + ').';
     if (decision.frames?.length) {
+      if (decision.aggregate === 'strong-consensus') text += ' Lenient video protection requires two full frames scoring at least ' + (decision.threshold * 2).toFixed(2) + '.';
       text += ' Checked ' + decision.samplesChecked + ' frame(s); decision: ' + decision.aggregate + '. Frame scores: ' +
         decision.frames.map(frame => frame.t + 's: ' + frame.squash + (frame.crop == null ? '' : ' / crop ' + frame.crop)).join('; ') + '.';
     }
@@ -64,7 +68,7 @@
     clearInterval(allowanceTimer); allowanceTimer = null;
     const previousRoot = panelRoot;
     panel?.remove(); panel = null; panelRoot = null; holdButton = null; allowanceText = null;
-    overlayFor(previousRoot || document.documentElement)?.querySelector('button')?.focus();
+    (manualTexts.get(previousRoot) || overlayFor(previousRoot || document.documentElement))?.querySelector('button')?.focus();
   }
   function messagePanel(text) {
     closePanel();
@@ -79,14 +83,22 @@
     document.documentElement.appendChild(panel);
     panel.querySelector('button').focus();
   }
+  function renderAllowance(result, root) {
+    const available = Math.floor(Math.min(result.dailyMs || 0, result.postMs || 0));
+    allowanceText.textContent = result.revealDailySec <= 0
+      ? 'Temporary reveals are off. Set a daily allowance in TabCloser settings.'
+      : result.dailyMs < 1
+        ? 'Daily allowance used up. Reveals return at local midnight.'
+        : result.postMs < 1
+          ? 'This post has used its three seconds today. It can be revealed again after local midnight.'
+          : 'Up to ' + seconds(available) + 's available for this post · ' + seconds(result.dailyMs) + 's remaining today. Resets at local midnight.';
+    holdButton.disabled = !statusIdFor(root) || result.revealDailySec <= 0 || available < 1;
+  }
   async function updateAllowance(root) {
     const target = panel;
     const result = await send({ type: 'xControlGet', postId: statusIdFor(root) }).catch(() => null);
     if (target !== panel || !result?.ok || lease || holding) return;
-    allowanceText.textContent = result.revealDailySec > 0
-      ? seconds(result.dailyMs) + 's left today · ' + seconds(result.postMs) + 's left for this post. Resets at local midnight.'
-      : 'Temporary reveals are off. Set a daily allowance in TabCloser settings before locking protection.';
-    holdButton.disabled = !statusIdFor(root) || result.revealDailySec <= 0 || result.dailyMs <= 0 || result.postMs <= 0;
+    renderAllowance(result, root);
   }
   function openPanel(root) {
     messagePanel(explanation(root));
@@ -115,8 +127,8 @@
     holdButton.addEventListener('blur', stopReveal);
     panel.append(details, allowanceText, holdButton);
     if (manuallyHidden(root)) {
-      const scope = posts.has(statusIdFor(root)) ? 'post' : 'media';
-      const key = scope === 'post' ? statusIdFor(root) : stableMediaVerificationKey(root);
+      const scope = posts.has(statusIdFor(root)) ? 'post' : textHidden(root) ? 'text' : 'media';
+      const key = scope !== 'media' ? statusIdFor(root) : stableMediaVerificationKey(root);
       const undo = button('Remove manual hide', async () => {
         const result = await send({ type: 'xControlRemove', scope, key }).catch(() => null);
         if (result?.ok) { applySnapshot(result); closePanel(); }
@@ -130,7 +142,7 @@
     allowanceTimer = setInterval(() => { if (!lease && !holding && panelRoot === root) updateAllowance(root); }, 1000);
   }
   async function startReveal(root) {
-    if (holding || lease || document.visibilityState !== 'visible' || !document.hasFocus() || !root.isConnected || root.dataset.tabcloserMediaState !== 'protected') return;
+    if (!holdButton || holdButton.disabled || holding || lease || document.visibilityState !== 'visible' || !document.hasFocus() || !root.isConnected || (root.dataset.tabcloserMediaState !== 'protected' && !textHidden(root))) return;
     holding = true;
     const generation = ++requestGeneration;
     const page = location.href;
@@ -138,7 +150,8 @@
     if (!result?.ok) {
       if (generation === requestGeneration) {
         holding = false;
-        if (allowanceText) allowanceText.textContent = result?.error || 'Unable to start reveal.';
+        if (allowanceText && Number.isFinite(result?.dailyMs)) renderAllowance(result, root);
+        else if (allowanceText) allowanceText.textContent = result?.error || 'Unable to start reveal.';
       }
       return;
     }
@@ -177,8 +190,8 @@
       mark(overlayFor(root), 'data-tabcloser-overlay-revealed');
       for (const player of mediaPlayersWithin(root)) blockMediaPlayback(player);
     });
-    document.querySelectorAll('.tabcloser-hidden-text, .tabcloser-quote').forEach(node => {
-      if (statusIdFor(node) === lease.postId) mark(node, node.classList.contains('tabcloser-quote') ? 'data-tabcloser-quote-revealed' : 'data-tabcloser-text-revealed');
+    document.querySelectorAll('.tabcloser-hidden-text, .tabcloser-quote, .tabcloser-manual-text-notice').forEach(node => {
+      if (statusIdFor(node) === lease.postId) mark(node, node.classList.contains('tabcloser-hidden-text') ? 'data-tabcloser-text-revealed' : 'data-tabcloser-quote-revealed');
     });
   }
   function stopReveal() {
@@ -195,11 +208,31 @@
   }
   function refresh() {
     refreshTimer = null;
+    for (const [text, notice] of manualTexts) {
+      if (!text.isConnected || !textHidden(text)) {
+        notice.remove(); manualTexts.delete(text);
+        delete text.dataset.tabcloserManualText;
+        if (text.dataset.tabcloserQuoted !== 'yes') text.classList.remove('tabcloser-hidden-text');
+      }
+    }
+    if (posts.size || texts.size) {
+      for (const text of document.querySelectorAll('[data-testid="tweetText"]')) {
+        if (!textHidden(text)) continue;
+        text.dataset.tabcloserManualText = '';
+        text.classList.add('tabcloser-hidden-text');
+        if (manualTexts.get(text)?.isConnected) continue;
+        const notice = document.createElement('div');
+        notice.className = 'tabcloser-controls tabcloser-manual-text-notice';
+        notice.append('Text hidden by you. ', button('Why hidden?', () => openPanel(text)));
+        isolateControls(notice);
+        text.insertAdjacentElement('afterend', notice);
+        manualTexts.set(text, notice);
+      }
+    }
     for (const root of [...manualRoots]) {
       if (!root.isConnected || !manuallyHidden(root)) {
         manualRoots.delete(root);
         if (root.isConnected) {
-          delete root.dataset.tabcloserManualPost;
           setRootState(root, 'safe', 'manual-removed');
           delete root.dataset.tabcloserMediaState;
           delete root.dataset.tabcloserMediaReason;
@@ -210,9 +243,6 @@
     }
     if (posts.size || media.size) {
       const roots = new Set(candidateRootsWithin(document));
-      for (const layer of document.querySelectorAll('article, article div[role="link"]')) {
-        if (posts.has(statusIdFor(layer))) { layer.dataset.tabcloserManualPost = ''; roots.add(layer); }
-      }
       for (const root of roots) {
         if (!manuallyHidden(root)) continue;
         manualRoots.add(root);
@@ -229,7 +259,7 @@
     stopReveal();
     if (panelRoot) closePanel();
     snapshot = next;
-    posts = new Set(next.posts || []); media = new Set(next.media || []);
+    posts = new Set(next.posts || []); texts = new Set(next.texts || []); media = new Set(next.media || []);
     refresh();
   }
   document.addEventListener('contextmenu', event => {
@@ -248,18 +278,18 @@
       contextTarget = null;
       if (!target?.isConnected) { messagePanel('Right-click a post or its media first.'); return; }
       const root = mediaRootFor(target);
-      const key = message.scope === 'post' ? statusIdFor(target) : root && stableMediaVerificationKey(root);
-      if (!key || (message.scope === 'post' && !target.closest('article') && !root)) {
+      const key = message.scope === 'text' ? statusIdFor(target) : root && stableMediaVerificationKey(root);
+      if (!key || (message.scope === 'text' && !target.closest('article'))) {
         messagePanel('Choose a post, image, or video with a stable X link. Avatars and profile banners are not supported by manual hiding yet.'); return;
       }
       send({ type: 'xControlHide', scope: message.scope, key }).then(result => {
-        if (result?.ok) { applySnapshot(result); messagePanel('Saved. This ' + (message.scope === 'post' ? 'post' : 'image or video') + ' will stay hidden. Manage manual hides in TabCloser settings.'); }
+        if (result?.ok) { applySnapshot(result); messagePanel('Saved. This ' + (message.scope === 'text' ? 'post’s text' : 'image or video') + ' will stay hidden. Manage manual hides in TabCloser settings.'); }
         else messagePanel(result?.error || 'Unable to save the manual hide.');
       }).catch(() => messagePanel('Unable to save the manual hide.'));
     }
   });
   new MutationObserver(mutations => {
-    if (!posts.size && !media.size && !lease) return;
+    if (!posts.size && !texts.size && !media.size && !lease) return;
     if (!mutations.some(mutation => !extensionOwnedElement(mutation.target))) return;
     if (lease && (!panelRoot?.isConnected || statusIdFor(panelRoot) !== lease.postId || revealPage !== location.href)) stopReveal();
     if (refreshTimer == null) refreshTimer = setTimeout(refresh, 50);

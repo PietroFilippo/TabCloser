@@ -172,7 +172,7 @@
   margin: 3px !important;
   touch-action: none !important;
 }
-.tabcloser-controls button:hover { background: #414039 !important; }
+.tabcloser-controls button:hover:not(:disabled) { background: #414039 !important; }
 .tabcloser-controls button:focus-visible { outline: 2px solid #e9c77c !important; outline-offset: 2px !important; }
 .tabcloser-controls button:disabled { opacity: .5 !important; cursor: default !important; }
 .tabcloser-media-actions { position: absolute !important; top: 8px !important; right: 8px !important; z-index: 3 !important; }
@@ -194,7 +194,7 @@
 .tabcloser-control-panel > strong { font-size: 16px !important; margin-right: 18px !important; }
 .tabcloser-control-panel p { margin: 12px 0 !important; }
 .tabcloser-control-note { color: #b3b6be !important; }
-[data-tabcloser-manual-post] { min-height: 240px !important; position: relative !important; }
+.tabcloser-manual-text-notice { padding: 8px 10px !important; border-radius: 8px !important; background: #202328 !important; }
 
 /* Verdicts remain protected. CSS clips the reveal at its deadline even if a
    busy page delays the JS cleanup; returning to the tab never resumes it. */

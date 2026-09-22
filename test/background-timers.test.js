@@ -13,7 +13,7 @@ const rule = (domain, extra = {}) => ({
 // Run the actual background script through its browser event/message seams.
 // Time, storage and tabs are isolated; no real tabs or extension data are touched.
 async function start({ rules = [rule('x.com')], blocks = {}, accumSec = {}, tabs: initialTabs,
-  url = 'https://x.com/home', xProtection = {}, xUserControls = {} } = {}) {
+  url = 'https://x.com/home', xProtection = {}, xUserControls = {}, adultSites = {}, adultListFails = false } = {}) {
   let now = 100000;
   let activeId = 1;
   let focused = true;
@@ -21,7 +21,7 @@ async function start({ rules = [rule('x.com')], blocks = {}, accumSec = {}, tabs
   let saved;
   const tabs = initialTabs || [{ id: 1, url, windowId: 1 }];
   const events = {}, timers = new Map(), alarms = new Map(), removed = [], updates = [];
-  const event = name => ({ addListener(fn) { events[name] = fn; } });
+  const event = name => ({ addListener(fn, filter) { events[name === 'request' && filter?.types?.includes('main_frame') ? 'adultRequest' : name] = fn; } });
   const context = vm.createContext({
     console, URL, TextDecoder, Uint8ClampedArray, ArrayBuffer,
     Date: class extends Date { static now() { return now; } },
@@ -31,10 +31,14 @@ async function start({ rules = [rule('x.com')], blocks = {}, accumSec = {}, tabs
     TabCloserXMetadata: require('../x-metadata.js'),
     TabCloserXVerdict: require('../x-verdict.js'),
     TabCloserXUserControls: require('../x-user-controls.js'),
+    TabCloserAdultSites: { ...require('../adult-sites.js'), async load() {
+      if (adultListFails) throw new Error('List unavailable');
+      return { domains: new Set(['adult.example']), metadata: { count: 1, retrievedAt: '2026-09-22' } };
+    } },
     TabCloserClassifier: { warmUp() {} },
     browser: {
       storage: { local: {
-        get: async () => structuredClone({ rules, blocks, accumSec, xProtection, xUserControls }),
+        get: async () => structuredClone({ rules, blocks, accumSec, xProtection, xUserControls, adultSites }),
         set: async data => { saved = { ...saved, ...structuredClone(data) }; }, remove: async () => {},
       } },
       runtime: { getURL: value => 'moz-extension://test/' + value, onMessage: event('message') },
@@ -224,4 +228,47 @@ test('a stale close signal after switching sites cannot close the new site early
   await stale(); await h.events.alarm({ name: 'autoclose' }); await h.state();
   assert.deepEqual(h.removed, []);
   assert.equal((await h.state()).focus.domain, 'reddit.com');
+});
+
+const settingsSender = { url: 'moz-extension://test/options.html' };
+test('independent allowance lock persists, accepts decreases, rejects increases and shortening, then expires', async () => {
+  const h = await start({ xProtection: { revealDailySec: 5 } });
+  assert.equal((await h.send({ type: 'lockXReveal', durationSec: 120 }, settingsSender)).ok, true);
+  assert.equal(h.saved().xProtection.revealLockUntil, 220000);
+  assert.equal((await h.send({ type: 'saveXProtection', revealDailySec: 6 })).ok, false);
+  assert.equal((await h.send({ type: 'lockXReveal', durationSec: 60 })).ok, false);
+  assert.equal((await h.send({ type: 'saveXProtection', revealDailySec: 0 })).ok, true);
+  const restarted = await start({ xProtection: h.saved().xProtection });
+  assert.equal((await restarted.send({ type: 'saveXProtection', revealDailySec: 1 })).ok, false);
+  restarted.advance(121);
+  assert.equal((await restarted.send({ type: 'saveXProtection', revealDailySec: 1 })).ok, true);
+});
+test('adult blocking is opt-in, catches existing tabs and subframes, and preserves its lock across restart', async () => {
+  const h = await start({ tabs: [{ id: 1, url: 'https://www.adult.example/video', windowId: 1 }, { id: 2, url: 'https://x.com/home', windowId: 1 }] });
+  assert.equal(Object.keys(await h.events.adultRequest({ type: 'main_frame', url: 'https://adult.example/' })).length, 0);
+  assert.equal((await h.send({ type: 'saveAdultSites', enabled: true }, settingsSender)).ok, true);
+  assert.equal(h.updates.length, 1);
+  assert.match(h.updates[0].url, /reason=adult/);
+  assert.match((await h.events.adultRequest({ type: 'main_frame', url: 'https://cdn.adult.example/' })).redirectUrl, /reason=adult/);
+  assert.equal((await h.events.adultRequest({ type: 'sub_frame', url: 'https://adult.example/' })).cancel, true);
+  assert.equal(Object.keys(await h.events.adultRequest({ type: 'main_frame', url: 'https://notadult.example/' })).length, 0);
+  assert.equal((await h.send({ type: 'lockAdultSites', durationSec: 120 }, settingsSender)).ok, true);
+  assert.equal((await h.send({ type: 'saveAdultSites', enabled: false }, settingsSender)).ok, false);
+  assert.equal((await h.send({ type: 'lockAdultSites', durationSec: 60 }, settingsSender)).ok, false);
+  const restarted = await start({ adultSites: h.saved().adultSites });
+  assert.equal((await restarted.send({ type: 'saveAdultSites', enabled: false }, settingsSender)).ok, false);
+  restarted.advance(121);
+  assert.equal((await restarted.state()).adultSites.enabled, true, 'expiry unlocks settings, not websites');
+  assert.equal((await restarted.send({ type: 'saveAdultSites', enabled: false }, settingsSender)).ok, true);
+});
+test('a missing adult list prevents enabling; a broken locked installation explains the failure instead of bypassing', async () => {
+  const h = await start({ adultListFails: true });
+  assert.equal((await h.send({ type: 'saveAdultSites', enabled: true }, settingsSender)).ok, false);
+  assert.equal((await h.state()).adultSites.enabled, false);
+  const locked = await start({ adultSites: { enabled: true, lockUntil: 999999 }, adultListFails: true });
+  assert.match((await locked.events.adultRequest({ type: 'main_frame', url: 'https://example.org' })).redirectUrl, /unavailable=1/);
+});
+test('adult protection cannot be changed by content scripts', async () => {
+  const h = await start();
+  assert.equal((await h.send({ type: 'saveAdultSites', enabled: true }, { tab: { id: 1, url: 'https://x.com' } })).ok, false);
 });

@@ -25,7 +25,8 @@
       .filter(([key, at]) => valid(key) && Number.isFinite(at)));
     const ledger = raw.ledger || {};
     return {
-      posts: entries(raw.posts, validPost), media: entries(raw.media, validMedia),
+      // Legacy whole-post choices now hide its text and media separately.
+      posts: entries(raw.posts, validPost), texts: entries(raw.texts, validPost), media: entries(raw.media, validMedia),
       ledger: {
         day: /^\d{4}-\d{2}-\d{2}$/.test(ledger.day) ? ledger.day : '',
         usedMs: Math.max(0, Number(ledger.usedMs) || 0),

@@ -346,3 +346,10 @@ button.primary:hover { background: #3c7f3c; }
   cursor: pointer;
 }
 .tabcloser-toast button:hover { background: #3c7f3c; }
+
+.panels-column { display: grid; gap: 20px; min-width: 0; }
+.panel-adult h2 { border-bottom: 2px solid var(--gold-dim); }
+.panel a { color: var(--gold); }
+.inline-feedback { color: var(--green); font-size: 13px; margin: 6px 0; }
+.inline-feedback:empty { display: none; }
+.inline-feedback.feedback-error { color: var(--danger); }

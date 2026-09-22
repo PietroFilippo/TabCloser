@@ -1160,7 +1160,7 @@ function scoredFrameClassifier(scoresByTime) {
   };
 }
 
-function directVideoHarness(tweetId, directSource, classify) {
+function directVideoHarness(tweetId, directSource, classify, sensitivity = 'balanced') {
   return startCoordinator(
     '<article><a href="/example/status/' + tweetId + '/video/1">' +
       '<div id="scored-video-root" data-testid="videoComponent">' +
@@ -1169,6 +1169,7 @@ function directVideoHarness(tweetId, directSource, classify) {
     '</a></article>',
     {
       url: 'https://x.com/example/status/' + tweetId,
+      config: { labeled: { enabled: true }, model: { enabled: true, sensitivity } },
       prepare(window) {
         const createElement = window.document.createElement.bind(window.document);
         window.document.createElement = function createElementWithVideoProbe(tagName, options) {
@@ -1245,13 +1246,15 @@ test('manual image hides work with automatic protection off, persist on remount,
   } finally { h.dom.window.close(); }
 });
 
-test('manual whole-post hides include text-only posts and isolate quoted posts', async () => {
+test('legacy post hides cover content only and isolate quoted posts', async () => {
   const h = await startCoordinator('<article id="outer"><a href="/a/status/111">Outer</a><div data-testid="tweetText">Outer text</div>' +
     '<div id="quoted" role="link"><a href="/b/status/222">Quoted</a><div data-testid="tweetText">Quoted text</div></div></article>', {
     interactions: true, config: {}, controlMessage: () => ({ ok: true, posts: ['222'], media: [] }),
   });
   try {
-    assert.equal(h.window.document.getElementById('quoted').dataset.tabcloserMediaReason, 'manual');
+    assert.equal(h.window.document.getElementById('quoted').dataset.tabcloserMediaState, undefined);
+    assert.ok(h.window.document.querySelector('#quoted [data-testid="tweetText"]').classList.contains('tabcloser-hidden-text'));
+    assert.ok(h.window.document.querySelector('#quoted .tabcloser-manual-text-notice'));
     assert.equal(h.window.document.getElementById('outer').dataset.tabcloserMediaState, undefined);
   } finally { h.dom.window.close(); }
 });
@@ -1693,4 +1696,91 @@ test('a painting is applied only after it decodes, never while partially loaded'
   } finally {
     harness.dom.window.close();
   }
+});
+
+// Captured scores, mapped to the fixture's sample times. Unobserved continuation
+// frames are synthetic clean frames, not claims about the original videos.
+for (const [id, scores] of Object.entries({
+  '2102013906692530650': [0.111, 0.756],
+  '2101878224376762506': [0.456, 0.326],
+  '2102037342286495975': [0.156, 0.004, 0.039, 0.417],
+  '2102167969014968675': [0.077, 0.099, 0.498],
+  '2102168314189410343': [0.119, 0.248, 0.516],
+})) {
+  test('lenient video evidence does not block captured false-positive pattern ' + id, async () => {
+    const source = 'https://video.twimg.com/amplify_video/' + id + '/vid/low.mp4';
+    const times = [3, 10, 17, 6, 13, 19];
+    const h = await directVideoHarness(id, source, message => {
+      const time = Number(message.mediaKey?.match(/\|t=([\d.]+)/)?.[1]);
+      const adultScore = message.kind === 'url' ? 0.01 : scores[times.indexOf(time)] || 0.01;
+      return { verdict: adultScore >= 0.3 ? 'protect' : 'safe', reason: 'visual', adultScore };
+    }, 'lenient');
+    try {
+      await sendDirectVideoMetadata(h, id, source);
+      assert.equal(h.window.document.getElementById('scored-video-root').dataset.tabcloserMediaState, 'safe');
+      assert.equal(directVideoVerdicts(h)[0].samplesChecked, 6, 'ambiguous evidence earns a complete second pass');
+    } finally { h.dom.window.close(); }
+  });
+}
+
+test('exhausted allowance disables all reveal entry points and explains the daily limit', async () => {
+  let requests = 0;
+  const h = await startCoordinator(controlFixture, { interactions: true,
+    prepare(w) { w.document.hasFocus = () => true; },
+    classify: () => ({ verdict: 'protect', reason: 'visual', adultScore: 0.83 }),
+    controlMessage(message) {
+      if (message.type === 'xControlRevealStart') requests++;
+      return { ok: true, posts: [], media: [], revealDailySec: 5, dailyMs: 0, postMs: 3000 };
+    },
+  });
+  try {
+    h.window.document.querySelector('.tabcloser-media-actions button').click();
+    await flush(h.window, 3);
+    const hold = [...h.window.document.querySelectorAll('button')].find(b => b.textContent === 'Hold to reveal');
+    assert.equal(hold.disabled, true);
+    assert.match(h.window.document.querySelector('.tabcloser-control-panel').textContent, /Daily allowance used up/);
+    hold.dispatchEvent(new h.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    hold.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await flush(h.window, 3);
+    assert.equal(requests, 0);
+  } finally { h.dom.window.close(); }
+});
+
+test('Lenient still protects repeated strong video evidence', async () => {
+  const id='909090', source='https://video.twimg.com/amplify_video/909090/vid/test.mp4';
+  const h=await directVideoHarness(id,source,scoredFrameClassifier({3:0.8,10:0.75,17:0.01}),'lenient');
+  try { await sendDirectVideoMetadata(h,id,source); assert.equal(h.window.document.getElementById('scored-video-root').dataset.tabcloserMediaState,'protected'); assert.equal(directVideoVerdicts(h)[0].aggregate,'strong-consensus'); }
+  finally { h.dom.window.close(); }
+});
+test('manual text is independent of media and remains hidden across protection changes, remounts, and reveal end', async () => {
+  const h=await startCoordinator(controlFixture, { interactions:true, config:{},
+    prepare(w) { w.document.hasFocus=()=>true; Object.defineProperty(w.document, 'visibilityState', { value:'visible' }); },
+    controlMessage(m) { return m.type==='xControlRevealStart'
+      ? {ok:true,token:'text-test',postId:'123',durationMs:150,deadline:Date.now()+150}
+      : {ok:true,posts:[],texts:['123'],media:[],revealDailySec:5,dailyMs:5000,postMs:3000}; },
+  });
+  try {
+    let text=h.window.document.querySelector('[data-testid="tweetText"]');
+    assert.ok(text.classList.contains('tabcloser-hidden-text'));
+    assert.equal(h.window.document.getElementById('controlled-image').dataset.tabcloserMediaState,undefined);
+    assert.equal(h.window.document.querySelector('article').dataset.tabcloserMediaState,undefined);
+    h.window.document.querySelector('.tabcloser-manual-text-notice button').click();
+    await flush(h.window,3);
+    const hold=[...h.window.document.querySelectorAll('button')].find(b=>b.textContent==='Hold to reveal');
+    hold.dispatchEvent(new h.window.MouseEvent('pointerdown',{bubbles:true,button:0}));
+    await flush(h.window,2);
+    assert.ok(text.hasAttribute('data-tabcloser-text-revealed'));
+    h.window.dispatchEvent(new h.window.Event('blur'));
+    await flush(h.window,3);
+    assert.equal(text.hasAttribute('data-tabcloser-text-revealed'),false);
+    await h.sendContentMessage({type:'xProtectionChanged',xProtection:{}});
+    assert.ok(text.classList.contains('tabcloser-hidden-text'));
+    h.window.document.body.innerHTML=controlFixture;
+    await flush(h.window,60);
+    text=h.window.document.querySelector('[data-testid="tweetText"]');
+    assert.ok(text.classList.contains('tabcloser-hidden-text'));
+    await h.sendContentMessage({type:'xControlsChanged',snapshot:{posts:[],texts:[],media:[]}});
+    assert.equal(text.classList.contains('tabcloser-hidden-text'),false);
+    assert.equal(h.window.document.querySelector('.tabcloser-manual-text-notice'),null);
+  } finally { h.dom.window.close(); }
 });

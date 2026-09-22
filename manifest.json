@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TabCloser",
-  "version": "0.3.0",
-  "description": "Limit distracting sites and locally protect against mature media on X/Twitter.",
+  "version": "0.4.0",
+  "description": "Limit distracting sites, block known adult websites, and protect sensitive media on X locally.",
   "browser_specific_settings": {
     "gecko": {
       "id": "tabcloser@personal.local",
@@ -44,6 +44,7 @@
   "background": {
     "scripts": [
       "common.js",
+      "adult-sites.js",
       "x-metadata.js",
       "x-verdict.js",
       "x-media-utils.js",

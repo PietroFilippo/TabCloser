@@ -2,7 +2,7 @@
 // marks mature; 'full' additionally classifies images, video posters, and up
 // to three frames from a detached low-bandwidth video probe. The visible X
 // player is never used, decoded, or seeked by TabCloser.
-const xProtectionCoordinatorVersion = 'media-controls-v1';
+const xProtectionCoordinatorVersion = 'media-controls-v2';
 let mode = 'off';
 let settings = { replaceText: false, blockLike: false, sensitivity: 'balanced' };
 let operationId = 0;
@@ -441,7 +441,7 @@ function restoreArticleText(article) {
   const text = article.querySelector('[data-testid="tweetText"]');
   if (text) {
     delete text.dataset.tabcloserQuoted;
-    text.classList.remove('tabcloser-hidden-text');
+    if (!text.hasAttribute('data-tabcloser-manual-text')) text.classList.remove('tabcloser-hidden-text');
   }
   article.querySelectorAll('.tabcloser-quote').forEach(quote => quote.remove());
 }
@@ -450,7 +450,7 @@ function restoreAllArticleText() {
   document.querySelectorAll('.tabcloser-quote').forEach(quote => quote.remove());
   document.querySelectorAll('[data-tabcloser-quoted]').forEach(text => {
     delete text.dataset.tabcloserQuoted;
-    text.classList.remove('tabcloser-hidden-text');
+    if (!text.hasAttribute('data-tabcloser-manual-text')) text.classList.remove('tabcloser-hidden-text');
   });
 }
 
@@ -549,7 +549,7 @@ function setRootState(root, state, reason) {
   }
   overlay.title = reason || '';
   if (!existing) host.appendChild(overlay);
-  if (state === 'protected' && mature) applyQuoteFor(root);
+  if (state === 'protected' && mature && reason !== 'manual') applyQuoteFor(root);
   for (const player of mediaPlayersWithin(root)) blockMediaPlayback(player);
   globalThis.TabCloserXInteractions?.decorate(root, state, reason);
 }
@@ -801,10 +801,14 @@ async function sampleDetachedVideoSource(source, control) {
     const escalationBand = threshold * escalationBandFraction;
     const cropGate = threshold * cropGateFraction;
     const strongThreshold = threshold * strongProtectFraction;
+    // Lenient videos need two strong full-frame signals. A crop, one spike,
+    // or several weak scores are not independent evidence of mature content.
+    const lenientVideo = settings.sensitivity === 'lenient';
     const scores = [];
     const frameDetails = [];
     let incomplete = false;
     let marginalProtect = null;
+    let strongFullFrames = 0;
 
     const round = value => Math.round(value * 1000) / 1000;
     const aggregates = () => ({
@@ -832,9 +836,10 @@ async function sampleDetachedVideoSource(source, control) {
         let result = await classifyPixels(pixelsFromDrawable(probe), frameKey);
         if (result?.reason !== 'visual' || !Number.isFinite(result.adultScore)) incomplete = true;
         const squashScore = scoreOf(result);
+        if (squashScore >= strongThreshold && matureVerdict(result)) strongFullFrames += 1;
         let frameScore = squashScore;
         let cropScore = null;
-        if (!matureVerdict(result) && squashScore >= cropGate) {
+        if (!lenientVideo && !matureVerdict(result) && squashScore >= cropGate) {
           const cropData = centerCropPixelsFromDrawable(probe);
           if (cropData) {
             const cropResult = await classifyPixels(cropData, frameKey + '|crop');
@@ -851,6 +856,12 @@ async function sampleDetachedVideoSource(source, control) {
           crop: cropScore == null ? null : round(cropScore),
         });
         const decided = fields => ({ samplesChecked: scores.length, promote: true, frames: frameDetails, ...aggregates(), ...fields });
+        if (lenientVideo) {
+          if (strongFullFrames >= 2) {
+            return { ...result, verdict: 'protect', reason: 'visual', ...decided({ aggregate: 'strong-consensus' }) };
+          }
+          continue;
+        }
         if (matureVerdict(result)) {
           // A single strong frame is decisive; a marginal one waits for a
           // second suspicious frame before it may protect.
@@ -877,7 +888,7 @@ async function sampleDetachedVideoSource(source, control) {
       const escalatedVerdict = await classifyFrames(extraTimes);
       if (escalatedVerdict) return escalatedVerdict;
     }
-    if (marginalProtect) {
+    if (marginalProtect && !lenientVideo) {
       // Every other frame stayed clean: likely one noisy sample. Censor the
       // mounted player (fail-closed) but do not promote the verdict to the
       // session set, so other surfaces of this tweet get a fresh look.
@@ -1060,6 +1071,9 @@ async function classifyRoot(root, fingerprint, token) {
       ensureClassificationActive(isActive);
       recordDecision({ ...result, thumbnailScore: thumbnailVerdict?.adultScore }, 'video frames');
       xMetadataDebug('direct-video-verdict', {
+        diagnosticVersion: 'video-consensus-v2',
+        sensitivity: settings.sensitivity,
+        threshold: TabCloserXVerdict.presetValues(settings.sensitivity).threshold,
         statusId: statusIdFor(root),
         verdict: result.verdict,
         reason: result.reason,
@@ -1279,7 +1293,8 @@ function setProtection(config) {
   mode = modelEnabled ? 'full' : labeledEnabled ? 'labeled' : 'off';
   document.documentElement.dataset.tabcloserXProtection = mode;
   xMetadataDebug('protection-state', {
-    diagnosticVersion: 'video-probe-v1',
+    diagnosticVersion: 'video-consensus-v2',
+    sensitivity: settings.sensitivity,
     mode,
     labeledEnabled,
     modelEnabled,

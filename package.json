@@ -1,6 +1,6 @@
 {
   "name": "tabcloser",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Firefox and Zen extension with local X/Twitter mature-media protection.",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "node scripts/build.mjs",
     "lint:extension": "web-ext lint --source-dir dist",
     "package": "node scripts/package.mjs",
-    "evaluate:model": "node scripts/evaluate-model.mjs"
+    "evaluate:model": "node scripts/evaluate-model.mjs",
+    "update:adult-list": "node scripts/update-adult-list.mjs"
   },
   "dependencies": {
     "@tensorflow/tfjs": "4.22.0",
@@ -19,6 +20,7 @@
     "jpeg-js": "0.4.4",
     "jsdom": "^29.1.1",
     "pngjs": "7.0.0",
+    "tldts": "7.4.8",
     "web-ext": "10.5.0"
   },
   "engines": {

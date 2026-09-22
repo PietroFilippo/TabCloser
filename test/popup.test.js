@@ -7,11 +7,11 @@ const { JSDOM } = require('jsdom');
 const root = path.resolve(__dirname, '..');
 const now = 100000;
 const rule = (domain, extra = {}) => ({ domain, id: domain, enabled: true, closeAfterSec: 180, ...extra });
-async function start(t, { rules = [], blocks = {}, accumSec = {}, focus = {}, url = 'https://untracked.test' } = {}) {
+async function start(t, { rules = [], blocks = {}, accumSec = {}, focus = {}, adultSites = {}, url = 'https://untracked.test' } = {}) {
   const dom = new JSDOM(fs.readFileSync(path.join(root, 'popup.html'), 'utf8'), { runScripts: 'outside-only' });
   t.after(() => dom.window.close());
   const w = dom.window;
-  const data = { rules, blocks, accumSec, focus };
+  const data = { rules, blocks, accumSec, focus, adultSites };
   let refresh;
   w.Date.now = () => now;
   w.setInterval = callback => { refresh = callback; };
@@ -47,6 +47,19 @@ test('internal browser pages have a friendly current-site description', async t 
   const h = await start(t, { url: 'about:addons' });
   assert.doesNotMatch(h.document.querySelector('#current').textContent, /has no timer/);
   assert.match(h.document.querySelector('#current').textContent, /browser|internal/i);
+});
+
+test('adult block pages never promise an expired cooldown', async t => {
+  const h = await start(t, { rules: [rule('adult.example')], adultSites: { enabled: true, lockUntil: now + 60000 }, url: 'moz-extension://test/blocked.html?reason=adult&domain=adult.example' });
+  assert.match(h.document.querySelector('#current').textContent, /Blocked by adult-site protection/);
+  assert.doesNotMatch(h.document.querySelector('#current').textContent, /Cooldown finished/);
+  assert.equal(h.document.querySelectorAll('#active .row').length, 0);
+  h.data.adultSites.enabled = false;
+  await h.refresh();
+  assert.match(h.document.querySelector('#current').textContent, /Paused/);
+  h.data.rules = [];
+  await h.refresh();
+  assert.match(h.document.querySelector('#current').textContent, /protection is off/);
 });
 
 test('a child-only block does not relabel or hide the unblocked parent timer', async t => {

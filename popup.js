@@ -90,7 +90,7 @@ async function currentPage() {
     const blockedPage = new URL(browser.runtime.getURL('blocked.html'));
     if (url.protocol === blockedPage.protocol && url.hostname === blockedPage.hostname &&
         url.pathname === blockedPage.pathname) {
-      return { host: normalizeRuleDomain(url.searchParams.get('domain') || ''), blockedPage: true };
+      return { host: normalizeRuleDomain(url.searchParams.get('domain') || ''), blockedPage: true, adult: url.searchParams.get('reason') === 'adult' };
     }
     return { host: hostFromUrl(tab.url) };
   } catch {
@@ -116,14 +116,21 @@ function renderState(s, page) {
   const currentBlock = activeBlockForHost(s.blocks, host, now);
   // A child-domain cooldown need not block its parent's other hosts. Keep
   // that parent's independent timer in the tracked list.
-  const currentRule = currentBlock ? null : ruleForHost(enabled, host);
+  const adultBlocked = page.adult && s.adultSites?.enabled;
+  const currentRule = currentBlock || adultBlocked ? null : ruleForHost(enabled, host);
   const currentKey = currentRule ? normalizeRuleDomain(currentRule.domain) : host;
-  document.getElementById('currentDot').className = 'dot ' + (currentBlock ? 'dot-amber'
+  document.getElementById('currentDot').className = 'dot ' + (currentBlock || adultBlocked ? 'dot-amber'
     : currentRule && s.focus?.domain === currentKey && s.focus.enteredAt != null ? 'dot-green' : 'dot-muted');
 
   // Current site — always shown.
   clear($current);
-  if (currentBlock) {
+  if (adultBlocked) {
+    $current.appendChild(el('div', { class: 'row blocked' }, [
+      el('div', { class: 'dom' }, host),
+      el('div', { class: 'row-detail' }, s.adultSites.error || 'Blocked by adult-site protection.'),
+      el('div', { class: 'meta' }, s.adultSites.lockUntil > now ? 'Settings locked until ' + new Date(s.adultSites.lockUntil).toLocaleString() : 'Manage in settings'),
+    ]));
+  } else if (currentBlock) {
     $current.appendChild(renderBlock(currentKey, currentBlock.block, now, currentBlock.key));
   } else if (currentRule) {
     $current.appendChild(renderActive(currentRule, s));
@@ -131,7 +138,7 @@ function renderState(s, page) {
     $current.appendChild(el('div', { class: 'row muted-row' }, [
       el('div', { class: 'dom', title: host }, host || 'Browser page'),
       el('div', { class: 'row-detail' }, host
-        ? (page.blockedPage ? 'Cooldown finished. You can return to the site.' : 'No timer for this site.')
+        ? (page.adult ? 'Adult-site protection is off.' : page.blockedPage ? 'Cooldown finished. You can return to the site.' : 'No timer for this site.')
         : 'Timers run on websites, not internal pages.'),
     ]));
   }
@@ -139,7 +146,7 @@ function renderState(s, page) {
   // Blocked rules have one cooldown card, never a second zeroed timer card.
   clear($active);
   const others = enabled
-    .filter(r => r !== currentRule && !activeBlockForHost(s.blocks, normalizeRuleDomain(r.domain), now))
+    .filter(r => r !== currentRule && !(adultBlocked && r === ruleForHost(enabled, host)) && !activeBlockForHost(s.blocks, normalizeRuleDomain(r.domain), now))
     .sort((a, b) => progressFor(b, s) - progressFor(a, s) || a.domain.localeCompare(b.domain));
   $activeSection.hidden = !others.length;
   $activeCount.textContent = String(others.length);

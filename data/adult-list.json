@@ -1,0 +1,29 @@
+{
+  "source": "The Block List Project — Porn",
+  "repository": "https://github.com/blocklistproject/Lists",
+  "revision": "ee3bdbaddf49c756cf3340bb2e6a9dee5282d1c6",
+  "sourceUrl": "https://raw.githubusercontent.com/blocklistproject/Lists/ee3bdbaddf49c756cf3340bb2e6a9dee5282d1c6/alt-version/porn-nl.txt",
+  "retrievedAt": "2026-09-22T21:12:01.282Z",
+  "license": "Unlicense",
+  "sourceSha256": "5e876678921406025032ac6fa9908cfce98216f6af0f7c0cd8e74a334b232dd4",
+  "sha256": "434d49517e57ec9d1b45aff63f79e12bda0b59d6bb386899be03713bb1d35d61",
+  "sourceCount": 953168,
+  "count": 936977,
+  "excludedParents": [
+    "x.com",
+    "twitter.com",
+    "reddit.com",
+    "youtube.com",
+    "youtu.be",
+    "tumblr.com",
+    "blogspot.com",
+    "wordpress.com"
+  ],
+  "excludedPublicSuffixes": [
+    "sex.hu",
+    "sex.pl",
+    "szex.hu",
+    "tochigi.jp"
+  ],
+  "invalidRows": 221
+}

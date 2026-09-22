@@ -45,3 +45,18 @@ test('settings explain a longer inherited cooldown instead of promising an earli
   assert.match(child.querySelector('.status').textContent, /Blocked by example.com/);
   assert.equal(child.querySelector('[data-action="unblock"]'), null);
 });
+
+test('allowance save feedback appears by its controls and clears instead of sticking to the page footer', async t => {
+  const h = await start(t, []);
+  h.w.browser.runtime.sendMessage = async msg => msg.type === 'getState'
+    ? { rules: [], blocks: {}, xProtection: { revealDailySec: 5 }, xUserControls: { dailyMs: 0 } }
+    : { ok: true };
+  h.w.document.querySelector('#xRevealDailySec').value = '5';
+  h.w.document.querySelector('#saveXReveal').click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.w.document.querySelector('#xRevealFeedback').textContent, 'Reveal allowance saved.');
+  assert.equal(h.w.document.querySelector('#saveStatus').textContent, '');
+  assert.match(h.w.document.querySelector('#xRevealStatus').textContent, /Daily allowance used up/);
+  await h.save();
+  assert.equal(h.w.document.querySelector('#xRevealFeedback').textContent, '');
+});

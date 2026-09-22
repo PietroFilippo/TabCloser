@@ -7,7 +7,7 @@ import { MobileNetV2MidModel } from 'nsfwjs/models/mobilenet_v2_mid';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const staticFiles = [
-  'background.js',
+  'background.js', 'adult-sites.js',
   'blocked.css', 'blocked.html', 'blocked.js',
   'catholic-quotes.js',
   'common.js',
@@ -34,6 +34,7 @@ async function writeModelAssets() {
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 await Promise.all(staticFiles.map(file => cp(path.join(root, file), path.join(dist, file))));
+await cp(path.join(root, 'data'), path.join(dist, 'data'), { recursive: true });
 await cp(path.join(root, 'icons'), path.join(dist, 'icons'), { recursive: true });
 await cp(path.join(root, 'assets'), path.join(dist, 'assets'), { recursive: true });
 

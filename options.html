@@ -9,10 +9,11 @@
   <main>
     <header class="page-header">
       <h1>Tab<span>Closer</span></h1>
-      <p class="tagline">Time limits for distracting sites · sacred-art protection for X</p>
+      <p class="tagline">Browsing limits · adult-site blocking · protection for X</p>
     </header>
 
     <div class="layout">
+      <div class="panels-column">
       <section class="panel panel-timers" aria-labelledby="rulesTitle">
         <h2 id="rulesTitle"><span class="panel-icon">⏱</span> Site timers</h2>
         <p class="panel-note">
@@ -23,6 +24,25 @@
         <button id="addRule" class="primary">+ Add site</button>
       </section>
 
+      <section class="panel panel-adult" aria-labelledby="adultTitle">
+        <h2 id="adultTitle">Adult websites</h2>
+        <p class="panel-note">Block known pornography websites and their subdomains using a bundled list. Matching happens on this device. This does not scan every website for adult content.</p>
+        <label class="toggle"><input id="adultSitesEnabled" type="checkbox"> Block known adult websites</label>
+        <p id="adultListStatus" class="panel-note"></p>
+        <div class="lock-controls">
+            <label for="adultLockAmount">Lock protection for</label>
+            <input id="adultLockAmount" type="number" min="1" step="1" value="60">
+            <select id="adultLockUnit" aria-label="Lock duration unit"><option value="60">minutes</option><option value="3600">hours</option><option value="86400">days</option></select>
+            <button id="adultLockButton" type="button">Lock</button>
+            <span class="lock-or">or until</span>
+            <input id="adultLockDate" type="datetime-local" aria-label="Lock until date">
+            <button id="adultLockDateButton" type="button">Lock until date</button>
+          </div><p id="adultLockStatus" class="lock-status" role="status"></p>
+        <p id="adultFeedback" class="inline-feedback" role="status"></p>
+        <p class="panel-note">Enabling this also blocks matching tabs already open. During a lock it cannot be switched off; after the lock expires, protection stays on until you disable it.</p>
+        <p class="panel-note">List: <a href="https://github.com/blocklistproject/Lists" target="_blank" rel="noopener noreferrer">The Block List Project</a> (Unlicense). Included with extension updates; no browsing data is sent to the list provider. Mixed-content sites such as X use separate protection.</p>
+      </section>
+      </div>
       <section class="panel panel-x x-protection" aria-labelledby="xProtectionTitle">
         <h2 id="xProtectionTitle"><span class="panel-icon">🛡</span> X / Twitter protection</h2>
         <p class="panel-note">Hide media X labels as mature, or add the on-device classifier. Video frames take priority over thumbnails when checks succeed; unavailable video checks fall back to the thumbnail. Enabling the classifier also enables the label tier.</p>
@@ -93,12 +113,22 @@
             <input id="xRevealDailySec" type="number" min="0" max="3600" step="1" value="0">
             <button id="saveXReveal" type="button">Save allowance</button>
           </div>
+          <p id="xRevealFeedback" class="inline-feedback" role="status"></p>
           <p id="xRevealStatus" class="lock-status"></p>
-          <p class="panel-note">Resets at local midnight. Choose before locking protection: the allowance cannot increase during a lock. Refreshes preserve usage; an interrupted reveal may use its full reservation.</p>
+          <div class="lock-controls">
+            <label for="xRevealLockAmount">Lock allowance for</label>
+            <input id="xRevealLockAmount" type="number" min="1" step="1" value="60">
+            <select id="xRevealLockUnit" aria-label="Lock duration unit"><option value="60">minutes</option><option value="3600">hours</option><option value="86400">days</option></select>
+            <button id="xRevealLockButton" type="button">Lock</button>
+            <span class="lock-or">or until</span>
+            <input id="xRevealLockDate" type="datetime-local" aria-label="Lock until date">
+            <button id="xRevealLockDateButton" type="button">Lock until date</button>
+          </div><p id="xRevealLockStatus" class="lock-status" role="status"></p>
+          <p class="panel-note">Resets at local midnight. Lock this allowance independently, including zero to keep reveals off. While this lock or an X protection lock is active, the allowance may only decrease. Refreshes preserve usage; an interrupted reveal may use its full reservation.</p>
         </div>
         <div class="tier">
           <h3>Manual hides</h3>
-          <p class="panel-note">Right-click an X post or its media, then choose TabCloser → hide this post or hide this image / video. Choices stay on this device even when automatic protection is off. Removing them is unavailable while X protection is locked.</p>
+          <p class="panel-note">Right-click an X post or its media, then choose TabCloser → hide this post’s text or hide this image / video. Author details and post actions remain visible. Older whole-post choices now hide text and media individually. Choices stay on this device even when automatic protection is off. Removing them is unavailable while X protection is locked.</p>
           <details><summary id="xManualSummary">Saved hides</summary><div id="xManualHides"></div></details>
         </div>
       </section>

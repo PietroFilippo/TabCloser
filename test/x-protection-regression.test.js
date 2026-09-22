@@ -71,7 +71,7 @@ test('background restores X protection in already-open tabs after an extension r
     'restoring an existing tab requires the scripting permission');
   assert.match(coordinator, /message\?\.type === 'tabCloserProtectionPing'/,
     'the coordinator must answer a versioned liveness probe');
-  assert.match(coordinator, /const xProtectionCoordinatorVersion = 'media-controls-v1'/);
+  assert.match(coordinator, /const xProtectionCoordinatorVersion = 'media-controls-v2'/);
   assert.match(coordinator, /version: xProtectionCoordinatorVersion/);
   assert.match(background, /browser\.tabs\.sendMessage\(tab\.id, \{ type: 'tabCloserProtectionPing' \}\)/,
     'healthy tabs must be detected before any injection is attempted');

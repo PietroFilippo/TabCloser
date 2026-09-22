@@ -3,6 +3,7 @@ const state = {
   rules: [],          // [{ id, domain, closeAfterSec, blockAfterClose, blockDurationSec, enabled }]
   accumSec: {},       // { [normalizedDomain]: accumulated active seconds }
   blocks: {},         // { [normalizedDomain]: { until: epochMs } }
+  adultSites: { enabled: false, lockUntil: null },
   // Two tiers: 'labeled' hides only media X itself marks mature; 'model' adds
   // the on-device classifier. model implies labeled (enable and lock).
   xProtection: {
@@ -11,6 +12,7 @@ const state = {
     replaceText: false, // swap censored post text for a Catholic quote
     blockLike: false,   // prevent liking posts whose media is censored
     revealDailySec: 0,  // opt-in; shared across all X tabs
+    revealLockUntil: null,
   },
   focus: { tabId: null, domain: null, enteredAt: null }, // not persisted
 };
@@ -20,6 +22,7 @@ let bootPromise = null;
 let stateQueue = Promise.resolve();
 let closeTimerGeneration = 0;
 let xUserControls;
+let adultList = null, adultListError = null;
 
 // Browser notifications can overlap across awaits. Serialize timer/rule state,
 // including settings messages, without putting media inference on this queue.
@@ -38,11 +41,12 @@ function finiteOrNull(value) {
 }
 
 async function loadState() {
-  const data = await browser.storage.local.get(['rules', 'accumSec', 'blocks', 'xProtection', 'xUserControls']);
+  const data = await browser.storage.local.get(['rules', 'accumSec', 'blocks', 'xProtection', 'xUserControls', 'adultSites']);
   xUserControls = TabCloserXUserControls.normalize(data.xUserControls);
   state.rules = data.rules ?? [];
   state.accumSec = data.accumSec ?? {};
   state.blocks = data.blocks ?? {};
+  state.adultSites = { enabled: data.adultSites?.enabled === true, lockUntil: finiteOrNull(data.adultSites?.lockUntil) };
   const raw = data.xProtection ?? {};
   // Migrate the legacy single-toggle shape { enabled, disableLockedUntil }.
   const legacyEnabled = raw.enabled === true;
@@ -60,6 +64,7 @@ async function loadState() {
     replaceText: raw.replaceText === true,
     blockLike: raw.blockLike === true,
     revealDailySec: Number.isInteger(raw.revealDailySec) ? Math.max(0, Math.min(3600, raw.revealDailySec)) : 0,
+    revealLockUntil: finiteOrNull(raw.revealLockUntil),
   };
   // Obsolete learning data is optional cleanup and must never abort startup.
   browser.storage.local.remove(['xSensitiveTweetCache', 'xRestrictedAuthorCache']).catch(() => {});
@@ -68,7 +73,7 @@ async function loadState() {
 // Higher rank censors more; loosening is refused while the model tier is locked.
 const SENSITIVITY_RANK = { lenient: 0, balanced: 1, strict: 2 };
 
-const xContentScriptVersion = 'media-controls-v1';
+const xContentScriptVersion = 'media-controls-v2';
 const xTabUrlPatterns = [
   '*://x.com/*',
   '*://*.x.com/*',
@@ -93,6 +98,7 @@ async function persist() {
     accumSec: state.accumSec,
     blocks: state.blocks,
     xProtection: state.xProtection,
+    adultSites: state.adultSites,
   });
 }
 
@@ -160,6 +166,46 @@ async function ensureExistingXTabsProtected() {
 function findRule(host) {
   return ruleForHost(state.rules, host);
 }
+
+async function loadAdultList() {
+  try {
+    adultList = await TabCloserAdultSites.load();
+    adultListError = null;
+    return true;
+  } catch (error) {
+    adultListError = error.message;
+    return false;
+  }
+}
+
+function adultSiteDomain(url) {
+  return state.adultSites.enabled && adultList ? TabCloserAdultSites.match(url, adultList.domains) : null;
+}
+function adultBlockedUrl(domain) {
+  return browser.runtime.getURL('blocked.html?reason=adult&domain=' + encodeURIComponent(domain));
+}
+async function enforceAdultSites() {
+  if (!state.adultSites.enabled) return;
+  const tabs = await browser.tabs.query({});
+  await Promise.all(tabs.map(tab => {
+    const domain = adultSiteDomain(tab.url);
+    return domain ? browser.tabs.update(tab.id, { url: adultBlockedUrl(domain) }).catch(() => {}) : null;
+  }));
+}
+
+// Firefox holds navigation while the event page loads its bundled list. Do not
+// enqueue this on stateQueue: a pending settings/tabs update may depend on it.
+browser.webRequest.onBeforeRequest.addListener(async details => {
+  if (bootPromise) await bootPromise;
+  if (!state.adultSites.enabled) return {};
+  const domain = adultSiteDomain(details.url);
+  if (domain) return details.type === 'sub_frame' ? { cancel: true } : { redirectUrl: adultBlockedUrl(domain) };
+  // A broken installed list must not silently disable an active locked policy.
+  if (!adultList && !await loadAdultList()) return details.type === 'sub_frame'
+    ? { cancel: true } : { redirectUrl: adultBlockedUrl(hostFromUrl(details.url) || '') + '&unavailable=1' };
+  const retried = adultSiteDomain(details.url);
+  return retried ? details.type === 'sub_frame' ? { cancel: true } : { redirectUrl: adultBlockedUrl(retried) } : {};
+}, { urls: ['http://*/*', 'https://*/*'], types: ['main_frame', 'sub_frame'] }, ['blocking']);
 
 function findBlock(host) {
   return activeBlockForHost(state.blocks, host);
@@ -253,6 +299,13 @@ async function handleFocusChange() {
 
   // If currently focused tab is a blocked host, redirect immediately.
   if (host && tab) {
+    const adultDomain = adultSiteDomain(tab.url);
+    if (adultDomain) {
+      await browser.tabs.update(tab.id, { url: adultBlockedUrl(adultDomain) }).catch(() => {});
+      state.focus = { tabId: null, domain: null, enteredAt: null };
+      await persist();
+      return;
+    }
     const blk = findBlock(host);
     const onExtensionPage = tab.url?.startsWith(browser.runtime.getURL(''));
     if (blk && Date.now() < blk.block.until && !onExtensionPage) {
@@ -316,6 +369,11 @@ browser.webNavigation.onBeforeNavigate.addListener(details => enqueueStateChange
   if (details.frameId !== 0) return; // only top-level
   const host = hostFromUrl(details.url);
   if (!host) return;
+  const adultDomain = adultSiteDomain(details.url);
+  if (adultDomain) {
+    await browser.tabs.update(details.tabId, { url: adultBlockedUrl(adultDomain) }).catch(() => {});
+    return;
+  }
   const blk = findBlock(host);
   if (!blk) return;
   const url = browser.runtime.getURL(
@@ -658,7 +716,7 @@ function xControlsLocked() {
 function xControlSnapshot(postId) {
   const remaining = TabCloserXUserControls.remaining(xUserControls, state.xProtection.revealDailySec, postId, Date.now());
   return {
-    posts: Object.keys(xUserControls.posts), media: Object.keys(xUserControls.media),
+    posts: Object.keys(xUserControls.posts), texts: Object.keys(xUserControls.texts), media: Object.keys(xUserControls.media),
     revealDailySec: state.xProtection.revealDailySec, locked: xControlsLocked(), ...remaining,
   };
 }
@@ -675,9 +733,9 @@ async function handleXControlMessage(msg, sender) {
   if (!fromX && !fromSettings) return { ok: false, error: 'Unavailable outside X or TabCloser settings.' };
   if (msg.type === 'xControlGet') return { ok: true, ...xControlSnapshot(msg.postId) };
   if (msg.type === 'xControlHide' || msg.type === 'xControlRemove') {
-    const valid = msg.scope === 'post' ? TabCloserXUserControls.validPost(msg.key) : msg.scope === 'media' && TabCloserXUserControls.validMedia(msg.key);
+    const valid = ['post', 'text'].includes(msg.scope) ? TabCloserXUserControls.validPost(msg.key) : msg.scope === 'media' && TabCloserXUserControls.validMedia(msg.key);
     if (!valid) return { ok: false, error: 'This item has no stable post or media identity.' };
-    const entries = msg.scope === 'post' ? xUserControls.posts : xUserControls.media;
+    const entries = msg.scope === 'post' ? xUserControls.posts : msg.scope === 'text' ? xUserControls.texts : xUserControls.media;
     if (msg.type === 'xControlRemove') {
       if (xControlsLocked()) return { ok: false, error: 'Manual hides cannot be removed while X protection is locked.' };
       delete entries[msg.key];
@@ -700,7 +758,7 @@ async function handleXControlMessage(msg, sender) {
       now: Date.now(), token: uuid(),
     });
     if (result.ok) await browser.storage.local.set({ xUserControls });
-    return result;
+    return result.ok ? result : { ...xControlSnapshot(msg.postId), ...result };
   }
   if (msg.type === 'xControlRevealEnd') {
     if (fromX && TabCloserXUserControls.end(xUserControls, { token: msg.token, tabId: sender.tab.id, now: Date.now() })) {
@@ -714,13 +772,13 @@ async function handleXControlMessage(msg, sender) {
 // Menus persist across MV3 event-page restarts; create only on installation/update.
 browser.runtime.onInstalled?.addListener(async () => {
   await browser.menus.removeAll();
-  browser.menus.create({ id: 'tabcloser-hide-post', title: 'TabCloser: hide this post', contexts: ['all'], documentUrlPatterns: xTabUrlPatterns });
+  browser.menus.create({ id: 'tabcloser-hide-text', title: 'TabCloser: hide this post’s text', contexts: ['all'], documentUrlPatterns: xTabUrlPatterns });
   browser.menus.create({ id: 'tabcloser-hide-media', title: 'TabCloser: hide this image / video', contexts: ['all'], documentUrlPatterns: xTabUrlPatterns });
 });
 browser.menus?.onClicked.addListener((info, tab) => {
-  if (!['tabcloser-hide-post', 'tabcloser-hide-media'].includes(info.menuItemId) || !Number.isInteger(tab?.id)) return;
+  if (!['tabcloser-hide-text', 'tabcloser-hide-media'].includes(info.menuItemId) || !Number.isInteger(tab?.id)) return;
   browser.tabs.sendMessage(tab.id, {
-    type: 'xManualHideSelection', scope: info.menuItemId === 'tabcloser-hide-post' ? 'post' : 'media',
+    type: 'xManualHideSelection', scope: info.menuItemId === 'tabcloser-hide-text' ? 'text' : 'media',
   }, { frameId: info.frameId || 0 }).catch(() => {});
 });
 
@@ -742,9 +800,31 @@ async function handleMessage(msg, sender) {
         blocks: state.blocks,
         xProtection: state.xProtection,
         xUserControls: xControlSnapshot(),
+        adultSites: { ...state.adultSites, listCount: adultList?.metadata.count || 0, listUpdatedAt: adultList?.metadata.retrievedAt || null, error: adultListError },
         focus: { ...state.focus },
         now: Date.now(),
       };
+    }
+    case 'saveAdultSites': {
+      if (sender?.url?.split(/[?#]/)[0] !== browser.runtime.getURL('options.html')) return { ok: false, error: 'Open TabCloser settings to change this protection.' };
+      if (typeof msg.enabled !== 'boolean') return { ok: false, error: 'Invalid adult-site setting.' };
+      if (!msg.enabled && isLockActive(state.adultSites.lockUntil)) return { ok: false, error: 'Adult-site protection is locked until ' + new Date(state.adultSites.lockUntil).toLocaleString() + '.' };
+      if (msg.enabled && !await loadAdultList()) return { ok: false, error: adultListError };
+      state.adultSites.enabled = msg.enabled;
+      await persist();
+      await enforceAdultSites();
+      await handleFocusChange();
+      return { ok: true };
+    }
+    case 'lockAdultSites': {
+      if (sender?.url?.split(/[?#]/)[0] !== browser.runtime.getURL('options.html')) return { ok: false, error: 'Open TabCloser settings to lock this protection.' };
+      const durationSec = Math.round(Number(msg.durationSec));
+      const until = Date.now() + durationSec * 1000;
+      if (!state.adultSites.enabled || !adultList || !Number.isFinite(durationSec) || durationSec < 60 || !Number.isSafeInteger(until) || until > 8640000000000000) return { ok: false, error: 'Enable adult-site protection and choose at least one minute.' };
+      if (isLockActive(state.adultSites.lockUntil) && until <= state.adultSites.lockUntil) return { ok: false, error: 'An adult-site lock cannot be shortened.' };
+      state.adultSites.lockUntil = until;
+      await persist();
+      return { ok: true, until };
     }
     case 'saveRules': {
       if (!Array.isArray(msg.rules)) return { ok: false, error: 'Invalid site rules.' };
@@ -821,8 +901,8 @@ async function handleMessage(msg, sender) {
         if (!Number.isInteger(msg.revealDailySec) || msg.revealDailySec < 0 || msg.revealDailySec > 3600) {
           return { ok: false, error: 'Choose a daily allowance from 0 to 3600 seconds.' };
         }
-        if (xControlsLocked() && msg.revealDailySec > current.revealDailySec) {
-          return { ok: false, error: 'The reveal allowance cannot increase while X protection is locked.' };
+        if ((xControlsLocked() || isLockActive(current.revealLockUntil)) && msg.revealDailySec > current.revealDailySec) {
+          return { ok: false, error: 'The reveal allowance cannot increase while its allowance lock or X protection lock is active.' };
         }
       }
       if (current.labeled.enabled && !labeledEnabled && isLockActive(current.labeled.lockUntil)) {
@@ -849,6 +929,17 @@ async function handleMessage(msg, sender) {
       await notifyXProtection();
       await notifyXControls();
       return { ok: true };
+    }
+    case 'lockXReveal': {
+      const durationSec = Math.round(Number(msg.durationSec));
+      if (!Number.isFinite(durationSec) || durationSec < 60) return { ok: false, error: 'Choose at least one minute.' };
+      const until = Date.now() + durationSec * 1000;
+      if (!Number.isSafeInteger(until) || until > 8640000000000000) return { ok: false, error: 'Invalid lock date.' };
+      if (isLockActive(state.xProtection.revealLockUntil) && until <= state.xProtection.revealLockUntil) return { ok: false, error: 'An allowance lock cannot be shortened.' };
+      state.xProtection.revealLockUntil = until;
+      await persist();
+      await notifyXControls();
+      return { ok: true, until };
     }
     case 'lockXProtection': {
       const target = msg.target === 'model' ? 'model' : 'labeled';
@@ -917,9 +1008,11 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
 // === Boot ===
 bootPromise = (async () => {
   await loadState();
+  if (state.adultSites.enabled) await loadAdultList();
   if (state.xProtection.model.enabled) TabCloserClassifier.warmUp();
   await ensureExistingXTabsProtected();
   // Periodic safety commit (0.5 min = Firefox MV3 minimum for installed addons)
   browser.alarms.create('commit', { periodInMinutes: 0.5 });
+  await enforceAdultSites();
   await handleFocusChange();
 })();

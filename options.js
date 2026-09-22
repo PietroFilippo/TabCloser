@@ -17,6 +17,14 @@ const $xRevealStatus = document.getElementById('xRevealStatus');
 const $xManualHides = document.getElementById('xManualHides');
 let manualListKey = '';
 let revealDraft = false;
+let revealFeedbackTimer;
+function revealFeedback(message, error = false) {
+  const node = document.getElementById('xRevealFeedback');
+  clearTimeout(revealFeedbackTimer);
+  node.textContent = message;
+  node.classList.toggle('feedback-error', error);
+  if (!error) revealFeedbackTimer = setTimeout(() => { node.textContent = ''; }, 3000);
+}
 const sensitivityRank = { lenient: 0, balanced: 1, strict: 2 };
 const $xModelLockAmount = document.getElementById('xModelLockAmount');
 const $xModelLockUnit = document.getElementById('xModelLockUnit');
@@ -359,6 +367,7 @@ async function save() {
 }
 
 function renderXProtection() {
+  renderAdultSites();
   const config = snapshot.xProtection || {};
   const labeled = config.labeled || {};
   const model = config.model || {};
@@ -385,8 +394,15 @@ function renderXProtection() {
   $xBlockLike.checked = config.blockLike === true;
   if (!revealDraft) $xReveal.value = config.revealDailySec || 0;
   const controls = snapshot.xUserControls || { posts: [], media: [], dailyMs: 0 };
-  $xRevealStatus.textContent = (controls.dailyMs / 1000).toFixed(1) + 's remaining today.' +
-    (labeledLocked || modelLocked ? ' Locked: the allowance may only decrease.' : '');
+  const revealLocked = isLocked(config.revealLockUntil);
+  $xReveal.max = labeledLocked || modelLocked || revealLocked ? config.revealDailySec || 0 : 3600;
+  $xRevealStatus.textContent = config.revealDailySec > 0
+    ? (controls.dailyMs > 0 ? (Math.ceil(controls.dailyMs / 100) / 10).toFixed(1) + 's remaining today.' : 'Daily allowance used up. Resets at local midnight.')
+    : 'Temporary reveals are off.';
+  document.getElementById('xRevealLockStatus').textContent = revealLocked
+    ? lockText(config.revealLockUntil) + ' The allowance may only decrease.'
+    : labeledLocked || modelLocked ? 'X protection is locked: the allowance may only decrease.' : '';
+  for (const suffix of ['Amount', 'Unit', 'Button', 'Date', 'DateButton']) document.getElementById('xRevealLock' + suffix).disabled = revealLocked;
   renderManualHides(controls);
 
   const sensitivity = sensitivityRank[model.sensitivity] != null ? model.sensitivity : 'balanced';
@@ -399,17 +415,18 @@ function renderXProtection() {
 }
 
 function renderManualHides(controls) {
-  const key = JSON.stringify([controls.posts, controls.media, controls.locked]);
+  const key = JSON.stringify([controls.posts, controls.texts, controls.media, controls.locked]);
   if (key === manualListKey) return;
   manualListKey = key;
   const entries = [...(controls.posts || []).map(key => ({ scope: 'post', key })),
+    ...(controls.texts || []).map(key => ({ scope: 'text', key })),
     ...(controls.media || []).map(key => ({ scope: 'media', key }))];
   document.getElementById('xManualSummary').textContent = entries.length + ' saved hide' + (entries.length === 1 ? '' : 's');
   $xManualHides.replaceChildren();
   for (const entry of entries) {
     const postId = entry.key.split('|')[0];
     const row = el('div', { class: 'manual-hide-row' }, [
-      el('a', { href: 'https://x.com/i/status/' + postId, target: '_blank', rel: 'noopener noreferrer' }, (entry.scope === 'post' ? 'Post ' : 'Media in post ') + postId),
+      el('a', { href: 'https://x.com/i/status/' + postId, target: '_blank', rel: 'noopener noreferrer' }, (entry.scope === 'post' ? 'Text and media in post ' : entry.scope === 'text' ? 'Text in post ' : 'Media in post ') + postId),
       el('button', { type: 'button', disabled: controls.locked }, 'Remove'),
     ]);
     if (entry.scope === 'media') row.title = entry.key.slice(entry.key.indexOf('|') + 1);
@@ -423,15 +440,28 @@ function renderManualHides(controls) {
 }
 
 $xReveal.addEventListener('input', () => { revealDraft = true; });
-document.getElementById('saveXReveal').addEventListener('click', async () => {
-  if (!$xReveal.value.trim() || !$xReveal.checkValidity()) return showSaveError('Choose a whole number from 0 to 3600.');
+async function saveRevealAllowance() {
+  if (!$xReveal.value.trim() || !$xReveal.checkValidity()) { revealFeedback('Choose a whole number from 0 to ' + $xReveal.max + '.', true); return false; }
   const result = await browser.runtime.sendMessage({
     type: 'saveXProtection', labeled: $xLabeled.checked, model: $xModel.checked,
     revealDailySec: Number($xReveal.value),
   });
-  if (!result?.ok) return showSaveError(result?.error);
+  if (!result?.ok) { revealFeedback(result?.error || 'Unable to save.', true); return false; }
   revealDraft = false;
-  $save.textContent = 'Reveal allowance saved.';
+  revealFeedback('Reveal allowance saved.');
+  await refreshSnapshot(); renderXProtection();
+  return true;
+}
+document.getElementById('saveXReveal').addEventListener('click', saveRevealAllowance);
+for (const [suffix, duration] of [
+  ['Button', () => durationSecFrom(document.getElementById('xRevealLockAmount'), document.getElementById('xRevealLockUnit'))],
+  ['DateButton', () => durationSecUntilDate(document.getElementById('xRevealLockDate'))],
+]) document.getElementById('xRevealLock' + suffix).addEventListener('click', async () => {
+  const durationSec = duration();
+  if (durationSec == null || durationSec < 60) return revealFeedback('Choose at least one minute or a future date.', true);
+  if (!await saveRevealAllowance()) return;
+  const result = await browser.runtime.sendMessage({ type: 'lockXReveal', durationSec });
+  revealFeedback(result?.ok ? 'Allowance locked.' : result?.error || 'Unable to lock.', !result?.ok);
   await refreshSnapshot(); renderXProtection();
 });
 
@@ -502,3 +532,29 @@ setInterval(async () => {
 }, 1000);
 
 initialLoad();
+
+function renderAdultSites() {
+  const config = snapshot.adultSites || {};
+  const locked = isLocked(config.lockUntil);
+  const toggle = document.getElementById('adultSitesEnabled');
+  toggle.checked = config.enabled === true;
+  toggle.disabled = locked;
+  for (const suffix of ['Amount', 'Unit', 'Button', 'Date', 'DateButton']) document.getElementById('adultLock' + suffix).disabled = locked || !config.enabled;
+  document.getElementById('adultLockStatus').textContent = locked ? lockText(config.lockUntil) : '';
+  document.getElementById('adultListStatus').textContent = config.error || (config.enabled
+    ? Number(config.listCount || 0).toLocaleString() + ' domains · list bundled ' + new Date(config.listUpdatedAt).toLocaleDateString()
+    : 'Off. Enable to use the bundled list.');
+}
+let adultFeedbackTimer;
+async function changeAdultSites(message) {
+  const response = await browser.runtime.sendMessage(message);
+  const feedback = document.getElementById('adultFeedback');
+  clearTimeout(adultFeedbackTimer);
+  feedback.textContent = response?.ok ? 'Saved.' : response?.error || 'Unable to save.';
+  feedback.classList.toggle('feedback-error', !response?.ok);
+  if (response?.ok) adultFeedbackTimer = setTimeout(() => { feedback.textContent = ''; }, 3000);
+  await refreshSnapshot(); renderAdultSites();
+}
+document.getElementById('adultSitesEnabled').addEventListener('change', event => changeAdultSites({ type: 'saveAdultSites', enabled: event.target.checked }));
+document.getElementById('adultLockButton').addEventListener('click', () => changeAdultSites({ type: 'lockAdultSites', durationSec: durationSecFrom(document.getElementById('adultLockAmount'), document.getElementById('adultLockUnit')) }));
+document.getElementById('adultLockDateButton').addEventListener('click', () => changeAdultSites({ type: 'lockAdultSites', durationSec: durationSecUntilDate(document.getElementById('adultLockDate')) }));
