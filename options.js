@@ -127,8 +127,9 @@ function render() {
 function buildStatus(rule) {
   const key = normalizeRuleDomain(rule.domain);
   const accum = snapshot.accumSec[key] ?? 0;
-  const block = snapshot.blocks[key];
-  const blockActive = block && Date.now() < block.until;
+  const applicableBlock = activeBlockForHost(snapshot.blocks, key);
+  const block = applicableBlock?.block;
+  const blockActive = applicableBlock?.key === key;
   const frag = document.createDocumentFragment();
 
   frag.appendChild(el('span', null, [
@@ -146,6 +147,10 @@ function buildStatus(rule) {
         ? el('span', { class: 'unblock-locked' }, '· early unblock locked')
         : el('button', { class: 'unblock', 'data-action': 'unblock' }, 'Unblock now'),
     ]));
+  }
+  if (applicableBlock && applicableBlock.key !== key) {
+    frag.appendChild(el('div', { class: 'blocked-line' },
+      `Blocked by ${applicableBlock.key} for ${formatDuration((block.until - Date.now()) / 1000)}. Manage that site's rule to unblock.`));
   }
   return frag;
 }
@@ -338,7 +343,8 @@ async function save() {
   const response = await browser.runtime.sendMessage({ type: 'saveRules', rules });
   if (!response.ok) {
     showSaveError(response.error);
-    await initialLoad();
+    // Keep the draft visible so validation errors (such as duplicate domains)
+    // can be corrected without losing other unsaved edits.
     return false;
   }
   $save.textContent = 'Saved.';

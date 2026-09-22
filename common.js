@@ -9,7 +9,8 @@ function uuid() {
 
 function hostFromUrl(url) {
   try {
-    return new URL(url).hostname.toLowerCase();
+    const parsed = new URL(url);
+    return /^https?:$/.test(parsed.protocol) ? parsed.hostname.toLowerCase() : null;
   } catch {
     return null;
   }
@@ -30,6 +31,28 @@ function hostMatches(host, ruleDomain) {
   const rd = normalizeRuleDomain(ruleDomain);
   if (!rd) return false;
   return host === rd || host.endsWith('.' + rd);
+}
+
+// Shared by enforcement and UI so overlapping domains have the same meaning.
+function ruleForHost(rules, host) {
+  return rules.reduce((best, rule) => {
+    if (!rule.enabled || !hostMatches(host, rule.domain)) return best;
+    return !best || normalizeRuleDomain(rule.domain).length > normalizeRuleDomain(best.domain).length
+      ? rule : best;
+  }, null);
+}
+
+function activeBlockForHost(blocks, host, now = Date.now()) {
+  let match = null;
+  for (const [key, block] of Object.entries(blocks)) {
+    if (block.until <= now || !hostMatches(host, key)) continue;
+    // A shorter child cooldown never cancels a longer parent cooldown.
+    if (!match || block.until > match.block.until ||
+        (block.until === match.block.until && key.length > match.key.length)) {
+      match = { key, block };
+    }
+  }
+  return match;
 }
 
 function formatDuration(totalSec) {

@@ -12,7 +12,7 @@
 
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  width: 320px;
+  width: 344px;
   margin: 0;
   background:
     radial-gradient(600px 200px at 15% -20%, rgba(44, 95, 44, 0.16), transparent 60%),
@@ -23,9 +23,13 @@ body {
   max-height: 520px;
 }
 
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+
 .popup-header {
   padding: 12px 14px 10px;
   border-bottom: 1px solid #2a2a2a;
+  flex: 0 0 auto;
 }
 .popup-header h1 {
   font-size: 16px;
@@ -33,6 +37,7 @@ body {
   margin: 0;
 }
 .popup-header h1 span { color: var(--green); }
+.header-note { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
 
 /* The list scrolls; header and footer stay pinned so a long list never blows
    the popup up to full screen height. */
@@ -40,6 +45,9 @@ body {
   overflow-y: auto;
   padding: 10px 14px 4px;
   flex: 1 1 auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a3a transparent;
 }
 .scroll::-webkit-scrollbar { width: 8px; }
 .scroll::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 4px; }
@@ -66,9 +74,10 @@ h2 {
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .dot-green { background: var(--green); }
 .dot-amber { background: var(--amber); }
+.dot-muted { background: #777; }
 
 .row {
-  padding: 8px 10px;
+  padding: 10px;
   border-radius: 7px;
   background: var(--card);
   border: 1px solid var(--card-border);
@@ -76,10 +85,13 @@ h2 {
   margin-bottom: 5px;
 }
 .row.active { border-left-color: var(--green); }
-.row.blocked { border-left-color: var(--amber); }
+.row.blocked {
+  border-left-color: var(--amber);
+  background: linear-gradient(110deg, rgba(255, 183, 77, 0.07), transparent), var(--card);
+}
 .row-top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
@@ -90,16 +102,23 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
-.row .tag {
-  font-weight: normal;
-  color: var(--green);
-  font-family: inherit;
+.status {
+  flex: 0 0 auto;
   font-size: 10px;
-  margin-left: 5px;
+  color: var(--muted);
+  background: #303030;
+  border-radius: 4px;
+  padding: 3px 6px;
 }
-.row .meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.status.counting { color: #9ed59e; background: rgba(74, 156, 74, 0.15); }
+.blocked .status { color: var(--amber); background: rgba(255, 183, 77, 0.1); }
+.row-detail { display: flex; justify-content: space-between; gap: 8px; margin-top: 7px; color: var(--muted); font-size: 11px; }
+.row-detail > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta { font-size: 11px; color: var(--muted); white-space: nowrap; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .row.blocked .meta { color: var(--amber); }
+.row .countdown { font-weight: 600; }
 .bar {
   height: 4px;
   background: #3a3a3a;
@@ -112,22 +131,22 @@ h2 {
 .bar-fill.danger { background: #f44336; }
 
 .muted-row { border-left-color: #444; }
-.dom-plain {
-  color: var(--muted);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .more {
+  display: block;
+  width: 100%;
+  margin: 5px 0 0;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--gold);
   font-size: 11px;
-  padding: 4px 2px 0;
+  padding: 7px;
   text-align: center;
 }
-.more:empty { display: none; }
+.more:hover { background: #242424; border-color: var(--card-border); }
 
-button {
+button { cursor: pointer; font-family: inherit; }
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+#openOptions {
   margin: 8px 14px 12px;
   padding: 8px;
   background: var(--green-deep);
@@ -138,5 +157,5 @@ button {
   font-size: 13px;
   flex: 0 0 auto;
 }
-button:hover { background: #3c7f3c; }
-.empty { color: #777; font-size: 12px; padding: 4px 2px; font-style: italic; }
+#openOptions:hover { background: #3c7f3c; }
+.error { color: var(--amber); font-size: 12px; margin: 0 0 10px; }

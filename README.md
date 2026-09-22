@@ -11,7 +11,8 @@ Personal-use, Manifest V3. Requires Firefox 140+ (or Zen on a recent build).
 - Optional block period after close (1 min, 30 min, 2 h, whatever).
 - Timed rule locks that prevent a rule from being disabled, deleted, or changed before expiry.
 - Optional X / Twitter protection that combines X labels with an on-device adult-content classifier for images, GIFs, and sampled video; it has its own timed disable lock.
-- Subdomain match — a rule for `twitter.com` also catches `mobile.twitter.com`.
+- Subdomain match — a rule for `twitter.com` also catches `mobile.twitter.com`. If both have enabled timer rules, the more specific domain controls the timer. Auto-close still closes all tabs matching the expired rule, including subdomains.
+- Cooldowns apply across overlapping domains: a subdomain cannot escape an active parent-domain block, and the latest applicable expiry determines when access returns. Duplicate domains are rejected when saving.
 - Block screen is friction-only: **no unblock button on the page**. To unblock early, open the add-on settings.
 
 ## Install (Zen / Firefox)
@@ -35,9 +36,10 @@ Use this when iterating on the source. The add-on unloads on browser restart.
 
 - Click the TabCloser toolbar icon -> **Open settings** to add a site.
 - Each rule has: domain, close-after (minutes), block-after-close toggle + duration, enabled toggle.
-- The popup shows current active-time progress and any currently blocked sites.
+- The popup shows each site as counting, paused, or blocked. Blocked sites show a cooldown instead of a second, reset timer card. Long lists expand with **Show more**, and the settings button stays visible while scrolling.
 - Reset the timer or unblock early from the settings page (per-rule buttons).
 - Use "Lock rule" after saving an enabled site to protect its configuration for a chosen number of minutes.
+- A new subdomain rule cannot override a locked parent timer. Existing duplicate rules from older versions remain editable; resolve duplicates before saving further rule changes.
 - Enable the X / Twitter mature-media blocker and use "Lock protection" to prevent it being turned off until the chosen time expires. Media stays hidden until X metadata or local classification resolves it; uncertain/error cases stay protected.
 
 ## Files

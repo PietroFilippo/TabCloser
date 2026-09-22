@@ -16,6 +16,19 @@ const state = {
 
 let closeTimer = null;
 let bootPromise = null;
+let stateQueue = Promise.resolve();
+let closeTimerGeneration = 0;
+
+// Browser notifications can overlap across awaits. Serialize timer/rule state,
+// including settings messages, without putting media inference on this queue.
+function enqueueStateChange(work) {
+  const job = stateQueue.then(async () => {
+    if (bootPromise) await bootPromise;
+    return work();
+  });
+  stateQueue = job.catch(error => console.warn('[TabCloser] State update failed', error));
+  return job;
+}
 
 // === Persistence ===
 function finiteOrNull(value) {
@@ -140,14 +153,11 @@ async function ensureExistingXTabsProtected() {
 
 // === Lookups ===
 function findRule(host) {
-  return state.rules.find(r => r.enabled && hostMatches(host, r.domain)) || null;
+  return ruleForHost(state.rules, host);
 }
 
 function findBlock(host) {
-  for (const [key, block] of Object.entries(state.blocks)) {
-    if (hostMatches(host, key)) return { key, block };
-  }
-  return null;
+  return activeBlockForHost(state.blocks, host);
 }
 
 // === Focus / active tab ===
@@ -162,18 +172,22 @@ async function getActiveTab() {
   }
 }
 
-function clearCloseTimer() {
+async function clearCloseTimer() {
+  closeTimerGeneration += 1;
   if (closeTimer) {
     clearTimeout(closeTimer);
     closeTimer = null;
   }
-  browser.alarms.clear('autoclose').catch(() => {});
+  await browser.alarms.clear('autoclose').catch(() => {});
 }
 
-function scheduleClose(remainingSec) {
-  clearCloseTimer();
+async function scheduleClose(remainingSec) {
+  await clearCloseTimer();
+  const generation = closeTimerGeneration;
   const ms = Math.max(0, remainingSec * 1000);
-  closeTimer = setTimeout(() => fireClose(), ms);
+  closeTimer = setTimeout(() => enqueueStateChange(() => {
+    if (generation === closeTimerGeneration) return fireClose();
+  }), ms);
   // Backup alarm in case event page unloads (Firefox MV3 allows 0.5 min minimum)
   if (remainingSec >= 30) {
     browser.alarms.create('autoclose', { delayInMinutes: remainingSec / 60 });
@@ -181,27 +195,23 @@ function scheduleClose(remainingSec) {
 }
 
 async function commitFocusElapsed() {
-  if (state.focus.domain && state.focus.enteredAt) {
-    const elapsed = (Date.now() - state.focus.enteredAt) / 1000;
+  if (state.focus.domain && state.focus.enteredAt != null) {
+    const now = Date.now();
+    const elapsed = Math.max(0, (now - state.focus.enteredAt) / 1000);
     state.accumSec[state.focus.domain] =
       (state.accumSec[state.focus.domain] ?? 0) + elapsed;
+    state.focus.enteredAt = now;
   }
 }
 
 async function fireClose() {
-  const key = state.focus.domain;
-  if (!key) {
-    clearCloseTimer();
-    return;
-  }
-  await commitFocusElapsed();
-  state.focus = { tabId: null, domain: null, enteredAt: null };
-  closeTimer = null;
-  await triggerAutoClose(key);
+  // A backup alarm may already be queued when the user resets or switches
+  // sites. Recheck the live focus and remaining time before closing anything.
+  await handleFocusChange();
 }
 
 async function triggerAutoClose(domainKey) {
-  const rule = state.rules.find(r => normalizeRuleDomain(r.domain) === domainKey);
+  const rule = state.rules.find(r => r.enabled && normalizeRuleDomain(r.domain) === domainKey);
   if (!rule) {
     await persist();
     return;
@@ -230,7 +240,8 @@ async function triggerAutoClose(domainKey) {
 
 async function handleFocusChange() {
   await commitFocusElapsed();
-  clearCloseTimer();
+  state.focus = { tabId: null, domain: null, enteredAt: null };
+  await clearCloseTimer();
 
   const tab = await getActiveTab();
   const host = tab?.url ? hostFromUrl(tab.url) : null;
@@ -259,10 +270,12 @@ async function handleFocusChange() {
       state.focus = { tabId: null, domain: null, enteredAt: null };
       await persist();
       await triggerAutoClose(key);
+      // Closing the active tab can expose a different tracked site.
+      await handleFocusChange();
       return;
     }
     state.focus = { tabId: tab.id, domain: key, enteredAt: Date.now() };
-    scheduleClose(remaining);
+    await scheduleClose(remaining);
   } else {
     state.focus = { tabId: null, domain: null, enteredAt: null };
   }
@@ -270,54 +283,43 @@ async function handleFocusChange() {
 }
 
 // === Event listeners ===
-browser.tabs.onActivated.addListener(() => handleFocusChange());
-browser.windows.onFocusChanged.addListener(() => handleFocusChange());
+browser.tabs.onActivated.addListener(() => enqueueStateChange(handleFocusChange));
+browser.windows.onFocusChanged.addListener(() => enqueueStateChange(handleFocusChange));
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.url && tab.active) handleFocusChange();
+  if (changeInfo.url && tab.active) return enqueueStateChange(handleFocusChange);
 });
-browser.tabs.onRemoved.addListener(async (tabId) => {
+browser.tabs.onRemoved.addListener(tabId => enqueueStateChange(async () => {
   if (state.focus.tabId === tabId) {
-    await commitFocusElapsed();
-    state.focus = { tabId: null, domain: null, enteredAt: null };
-    clearCloseTimer();
-    await persist();
+    await handleFocusChange();
   }
-});
+}));
 
-browser.alarms.onAlarm.addListener(async (alarm) => {
+browser.alarms.onAlarm.addListener(alarm => enqueueStateChange(async () => {
   if (alarm.name === 'autoclose') {
     await fireClose();
   } else if (alarm.name === 'commit') {
     // Periodic safety commit so accumulated time isn't lost if event page unloads.
-    if (state.focus.domain && state.focus.enteredAt) {
-      const elapsed = (Date.now() - state.focus.enteredAt) / 1000;
-      state.accumSec[state.focus.domain] =
-        (state.accumSec[state.focus.domain] ?? 0) + elapsed;
-      state.focus.enteredAt = Date.now();
+    if (state.focus.domain && state.focus.enteredAt != null) {
+      await commitFocusElapsed();
       await persist();
     }
   }
-});
+}));
 
 // Block redirect on every navigation
-browser.webNavigation.onBeforeNavigate.addListener(async (details) => {
+browser.webNavigation.onBeforeNavigate.addListener(details => enqueueStateChange(async () => {
   if (details.frameId !== 0) return; // only top-level
   const host = hostFromUrl(details.url);
   if (!host) return;
   const blk = findBlock(host);
   if (!blk) return;
-  if (Date.now() >= blk.block.until) {
-    delete state.blocks[blk.key];
-    await persist();
-    return;
-  }
   const url = browser.runtime.getURL(
     `blocked.html?domain=${encodeURIComponent(blk.key)}&until=${blk.block.until}`
   );
   try {
     await browser.tabs.update(details.tabId, { url });
   } catch {}
-});
+}));
 
 
 // === X / Twitter sensitive-media metadata ===
@@ -641,15 +643,13 @@ async function classifyXMedia(msg, sender) {
 }
 
 // === Messages from popup / options ===
-browser.runtime.onMessage.addListener(async (msg, sender) => {
-  if (!msg?.type) return;
-  if (bootPromise) await bootPromise;
+async function handleMessage(msg, sender) {
   switch (msg.type) {
     case 'getState': {
       // include in-flight focus seconds so UI reads live time
       const pendingAccum = { ...state.accumSec };
-      if (state.focus.domain && state.focus.enteredAt) {
-        const elapsed = (Date.now() - state.focus.enteredAt) / 1000;
+      if (state.focus.domain && state.focus.enteredAt != null) {
+        const elapsed = Math.max(0, (Date.now() - state.focus.enteredAt) / 1000);
         pendingAccum[state.focus.domain] =
           (pendingAccum[state.focus.domain] ?? 0) + elapsed;
       }
@@ -663,6 +663,7 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
       };
     }
     case 'saveRules': {
+      if (!Array.isArray(msg.rules)) return { ok: false, error: 'Invalid site rules.' };
       const cleaned = msg.rules
         .filter(r => r && typeof r.domain === 'string' && r.domain.trim().length > 0)
         .map(r => ({
@@ -674,6 +675,17 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
           lockUnblock: !!r.lockUnblock,
           enabled: r.enabled !== false,
         }));
+      const domains = new Set();
+      const ids = new Set();
+      for (const rule of cleaned) {
+        if (!rule.domain || !Number.isFinite(rule.closeAfterSec) || !Number.isFinite(rule.blockDurationSec)) {
+          return { ok: false, error: 'Each site needs a domain and valid timer durations.' };
+        }
+        if (domains.has(rule.domain)) return { ok: false, error: rule.domain + ' already has a rule. Edit that rule instead.' };
+        if (ids.has(rule.id)) return { ok: false, error: 'Duplicate rule identifier.' };
+        domains.add(rule.domain);
+        ids.add(rule.id);
+      }
       const existingById = new Map(state.rules.map(rule => [rule.id, rule]));
       for (const existing of state.rules) {
         if (!isLockActive(existing.disableLockedUntil)) continue;
@@ -686,7 +698,17 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
           return { ok: false, error: 'Rule for ' + existing.domain + ' is locked until ' + new Date(existing.disableLockedUntil).toLocaleString() + '.' };
         }
       }
+      for (const candidate of cleaned.filter(rule => rule.enabled)) {
+        const previous = findRule(candidate.domain);
+        if (previous && isLockActive(previous.disableLockedUntil) &&
+            ruleForHost(cleaned, candidate.domain)?.id !== previous.id) {
+          return { ok: false, error: 'The rule for ' + previous.domain + ' is locked; a subdomain cannot override it.' };
+        }
+      }
       for (const rule of cleaned) rule.disableLockedUntil = existingById.get(rule.id)?.disableLockedUntil ?? null;
+      await commitFocusElapsed();
+      state.focus = { tabId: null, domain: null, enteredAt: null };
+      await clearCloseTimer();
       state.rules = cleaned;
       // Prune orphan accum/blocks
       const keep = new Set(cleaned.map(r => r.domain));
@@ -769,17 +791,33 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
       }
       delete state.blocks[key];
       state.accumSec[key] = 0;
+      if (state.focus.domain === key) {
+        state.focus.enteredAt = Date.now();
+        await handleFocusChange();
+      }
       await persist();
       return { ok: true };
     }
     case 'resetAccum': {
       const key = normalizeRuleDomain(msg.domain);
       state.accumSec[key] = 0;
-      if (state.focus.domain === key) state.focus.enteredAt = Date.now();
+      if (state.focus.domain === key) {
+        state.focus.enteredAt = Date.now();
+        await handleFocusChange();
+      }
       await persist();
       return { ok: true };
     }
   }
+}
+
+browser.runtime.onMessage.addListener(async (msg, sender) => {
+  if (!msg?.type) return;
+  if (msg.type === 'classifyXMedia' || msg.type === 'getXProtectionDiagnostics') {
+    if (bootPromise) await bootPromise;
+    return handleMessage(msg, sender);
+  }
+  return enqueueStateChange(() => handleMessage(msg, sender));
 });
 
 // === Boot ===

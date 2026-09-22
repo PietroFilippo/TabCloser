@@ -1,32 +1,35 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <title>TabCloser</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header class="popup-header">
     <h1>Tab<span>Closer</span></h1>
+    <span class="header-note">Site activity</span>
   </header>
 
-  <div class="scroll">
+  <main class="scroll">
+    <p id="error" class="error" role="status" hidden>Unable to refresh. Retrying…</p>
     <section>
-      <h2><span class="dot dot-green"></span> Current site</h2>
+      <h2><span id="currentDot" class="dot dot-muted"></span> Current site</h2>
       <div id="current"></div>
     </section>
 
-    <section>
-      <h2><span class="dot dot-green"></span> Tracked sites <span id="activeCount" class="count"></span></h2>
+    <section id="activeSection" hidden>
+      <h2><span class="dot dot-muted"></span> Tracked sites <span id="activeCount" class="count"></span></h2>
       <div id="active"></div>
-      <div id="activeMore" class="more"></div>
+      <button id="activeMore" class="more" type="button" aria-controls="active" aria-expanded="false" hidden></button>
     </section>
 
-    <section>
+    <section id="blockSection" hidden>
       <h2><span class="dot dot-amber"></span> Blocked <span id="blockCount" class="count"></span></h2>
       <div id="blocks"></div>
-      <div id="blockMore" class="more"></div>
+      <button id="blockMore" class="more" type="button" aria-controls="blocks" aria-expanded="false" hidden></button>
     </section>
-  </div>
+  </main>
 
   <button id="openOptions">⚙ Open settings</button>
   <script src="common.js"></script>
